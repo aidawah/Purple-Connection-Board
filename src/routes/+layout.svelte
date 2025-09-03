@@ -23,7 +23,7 @@
 	<link rel="icon" href={favicon} />
 </svelte:head>
 
-<div class="min-h-dvh bg-white pb-16 text-zinc-900 md:pb-0 dark:bg-zinc-950 dark:text-zinc-100">
+<div class="pb-16 md:pb-0">
 	<Navbar />
 	<slot />
 	<Footer />
