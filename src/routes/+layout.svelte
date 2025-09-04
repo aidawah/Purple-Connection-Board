@@ -13,6 +13,7 @@
 
 <script lang="ts">
 	import '../app.css';
+	import { page } from '$app/stores';
 
 	import Navbar from '$lib/components/Navbar.svelte';
 	import Footer from '$lib/components/Footer.svelte';
@@ -24,7 +25,11 @@
 </svelte:head>
 
 <div class="pb-16 md:pb-0">
-	<Navbar />
+	{#if $page.url.pathname !== '/signinPage'}
+		<Navbar />
+	{/if}
+
 	<slot />
+
 	<Footer />
 </div>
