@@ -1,17 +1,6 @@
-/* --- Base theme & resets --- */
-:root{
-  --bg-1:#0b1020;
-  --bg-2:#101932;
-  --panel:#121a2b;
-  --card:#131c30;
-  --card-border:#1e2a45;
-  --text:#eaf2ff;
-  --muted:#9fb1d1;
-  --teal:#14b8a6;
-  --teal-ink:#053b3a;
-  --ring: rgba(20,184,166,.6);
-  --glow: 0 10px 30px rgba(20,184,166,.18);
-}
+@import 'tailwindcss';
+@plugin '@tailwindcss/forms';
+@plugin '@tailwindcss/typography';
 
 /* project tokens using the new @theme API */
 @theme {
