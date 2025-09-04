@@ -1,65 +1,59 @@
 <script lang="ts">
-  import type { Puzzle } from "$lib/types";
   import { createEventDispatcher } from "svelte";
-
+  import type { Puzzle } from "$lib/types";
   export let puzzle: Puzzle;
   export let pinned = false;
-
   const dispatch = createEventDispatcher();
 
   function togglePin(e: MouseEvent) {
-    e.preventDefault();
-    e.stopPropagation();
+    e.stopPropagation(); e.preventDefault();
     dispatch("pin", { id: puzzle.id, pinned: !pinned });
   }
 
-  function toMillis(x: any): number {
-    if (!x) return 0;
-    if (typeof x === "number") return x;
-    if (x.seconds) return x.seconds * 1000; // Firestore Timestamp
-    const t = Date.parse(x);
-    return Number.isNaN(t) ? 0 : t;
+  function toMillis(x: any) {
+    if (!x) return 0; if (typeof x === "number") return x;
+    if (x.seconds) return x.seconds * 1000;
+    const t = Date.parse(x); return isNaN(t) ? 0 : t;
   }
-  const created = new Date(toMillis((puzzle as any).createdAt));
+  const when = toMillis(puzzle.createdAt);
+  const whenText = when ? new Date(when).toLocaleString() : "";
 </script>
 
-<a href={`/gameboard/${puzzle.id}`} class="snapshot" style="text-decoration:none;color:inherit">
-  <div style="display:flex;align-items:center;gap:10px;justify-content:space-between;margin-bottom:10px">
-    <div style="min-width:0">
-      <h3 style="margin:0;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
-        {puzzle.title}
-      </h3>
-      <time style="opacity:.65;font-size:12px">
-        {created.toLocaleString()}
-      </time>
+<a
+  href={`/gameboard/${puzzle.id}`}
+  class="block rounded-2xl border border-[#1a2a43] p-4
+         bg-gradient-to-b from-[rgba(13,20,38,.85)] to-[rgba(13,20,38,.65)]
+         transition hover:-translate-y-0.5 hover:shadow-[0_8px_28px_rgba(0,0,0,.35)] hover:border-[#2a4067]
+         focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#14b8a6]"
+>
+  <div class="flex items-start justify-between gap-3">
+    <div>
+      <h3 class="m-0 text-xl font-semibold">{puzzle.title}</h3>
+      {#if whenText}<p class="m-0 text-sm opacity-70">{whenText}</p>{/if}
     </div>
+
     <button
-      aria-label={pinned ? "Unpin" : "Pin"}
-      title={pinned ? "Unpin" : "Pin"}
-      class="btn btn-ghost"
       on:click={togglePin}
-      style="height:30px;padding:0 10px;border-radius:8px"
+      aria-label={pinned ? "Unpin puzzle" : "Pin puzzle"}
+      class="h-9 w-9 grid place-items-center rounded-lg border border-[#2a4067]
+             text-[#cfe1ff] bg-transparent hover:bg-[#14223d]
+             data-[on=true]:bg-[#14b8a6] data-[on=true]:text-[#053b3a] data-[on=true]:border-[#0ea5a5]"
+      data-on={pinned}
     >
-      {pinned ? "★" : "☆"}
+      <span class="text-lg">{pinned ? "★" : "☆"}</span>
     </button>
   </div>
 
-  <div class="grid">
-    {#each puzzle.words as w}
-      <div class="chip" title={w.text}>{w.text}</div>
+  <!-- 4x4 snapshot -->
+  <div class="mt-4 grid grid-cols-4 gap-2">
+    {#each puzzle.words.slice(0,16) as w}
+      <div class="text-center text-[#cfe1ff] text-xs border border-[#26395e] rounded-md py-1 px-2 bg-[#0f1830]">
+        {w.text}
+      </div>
     {/each}
   </div>
 </a>
 
-<style>
-  /* Uses your theme’s .snapshot look; these ensure the grid is neat */
-  .grid{ display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:8px; }
-  .chip{
-    font-size:12px; border:1px solid #26395e; border-radius:10px; padding:6px 8px;
-    text-align:center; color:#cfe1ff; background:#0f1830;
-    overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
-  }
-</style>
 
 
 

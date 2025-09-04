@@ -13,14 +13,25 @@
   let loading = true;
   let err: string | null = null;
 
-  // UI state
-  let order: string[] = [];                 // shuffled word IDs
-  let selection: string[] = [];             // currently selected word IDs
-  let solved: Array<"A"|"B"|"C"|"D"> = [];  // found group IDs
+  let order: string[] = [];
+  let selection: string[] = [];
+  let solved: Array<"A"|"B"|"C"|"D"> = [];
   let shaking = false;
-
-  // victory effect toggle
   let showRing = false;
+
+  // dynamic cell sizing so the 4x4 fills under the toolbar without scroll
+  let toolbarEl: HTMLDivElement | null = null;
+  let cellPx = 120; // fallback
+
+  function recalcCell() {
+    const pad = 24, gap = 14, rows = 4, cols = 4, rowGapCount = rows - 1, colGapCount = cols - 1;
+    const maxW = window.innerWidth - 2 * pad;
+    const tbH = (toolbarEl?.offsetHeight ?? 56);
+    const maxH = window.innerHeight - 2 * pad - tbH - 16; // 16 gap below toolbar
+    const cellW = (maxW - gap * colGapCount) / cols;
+    const cellH = (maxH - gap * rowGapCount) / rows;
+    cellPx = Math.max(64, Math.floor(Math.min(cellW, cellH)));
+  }
 
   onMount(() => {
     const pid = $page.params.puzzleId;
@@ -31,30 +42,24 @@
       return;
     }
     puzzle = p;
-    order = shuffled(puzzle.words.map(w => w.id), 42); // deterministic shuffle
+    order = shuffled(puzzle.words.map(w => w.id), 42);
     loading = false;
+
+    recalcCell();
+    const onR = () => recalcCell();
+    window.addEventListener("resize", onR);
+    return () => window.removeEventListener("resize", onR);
   });
 
   function isLocked(wid: string) {
     if (!puzzle) return false;
     const gid = puzzle.words.find(w => w.id === wid)?.groupId;
-    return !!gid && solved.includes(gid!);
+    return !!gid && solved.includes(gid);
   }
-
   function labelFor(wid: string) {
     if (!puzzle) return "";
     const gid = puzzle.words.find(w => w.id === wid)?.groupId;
     return gid ? groupName(puzzle, gid) : "";
-  }
-
-  function toggle(wid: string) {
-    if (isLocked(wid)) return;
-    if (selection.includes(wid)) {
-      selection = selection.filter(id => id !== wid);
-    } else if (selection.length < 4) {
-      selection = [...selection, wid];
-      if (selection.length === 4) commitSelection();
-    }
   }
 
   async function commitSelection() {
@@ -63,92 +68,86 @@
     if (res.ok && res.groupId && !solved.includes(res.groupId)) {
       solved = [...solved, res.groupId];
       selection = [];
-
-      // when all 4 groups are done, fire the completion ring
       if (solved.length === 4) {
-  // replay the completion ring
-  showRing = false;
-  await tick();
-  showRing = true;
-
-  // NEW: persist completion to localStorage for the Browse "Completed" tab
-  try {
-    const raw = localStorage.getItem("completed");
-    const set = new Set<string>(raw ? JSON.parse(raw) : []);
-    set.add(puzzle!.id);
-    localStorage.setItem("completed", JSON.stringify([...set]));
-  } catch (e) {
-    console.error("Failed to persist completion", e);
-  }
-}
-
+        showRing = false; await tick(); showRing = true;
+      }
     } else {
       shaking = true; setTimeout(() => (shaking = false), 350);
       selection = [];
     }
   }
-
-  // Clear selection (Shift/Ctrl/Meta click also clears solved groups)
-  function clearSelection(e?: MouseEvent) {
-    if (e && (e.shiftKey || e.ctrlKey || e.metaKey)) {
-      solved = [];
-    }
-    selection = [];
+  function toggle(wid: string) {
+    if (isLocked(wid)) return;
+    if (selection.includes(wid)) selection = selection.filter(id => id !== wid);
+    else if (selection.length < 4) { selection = [...selection, wid]; if (selection.length === 4) commitSelection(); }
   }
 
-  // Shuffle only the UNSOLVED cards; keep solved in place
+  function clearSelection(e?: MouseEvent) {
+    if (e && (e.shiftKey || e.ctrlKey || e.metaKey)) { solved = []; }
+    selection = [];
+  }
   function shuffleUnsolved() {
     if (!puzzle) return;
-
-    const unsolvedIds = puzzle.words
-      .filter(w => !solved.includes(w.groupId))
-      .map(w => w.id);
-
-    const positions = order
-      .map((id, i) => ({ id, i }))
-      .filter(x => unsolvedIds.includes(x.id))
-      .map(x => x.i);
-
+    const unsolvedIds = puzzle.words.filter(w => !solved.includes(w.groupId)).map(w => w.id);
+    const positions = order.map((id, i) => ({ id, i })).filter(x => unsolvedIds.includes(x.id)).map(x => x.i);
     const shuffledIds = shuffled(unsolvedIds, Math.floor(Math.random() * 1e9));
     const next = [...order];
     positions.forEach((pos, k) => (next[pos] = shuffledIds[k]));
     order = next;
-
     selection = [];
   }
 </script>
 
 {#if loading}
-  <p class="page" style="opacity:.7">Loading…</p>
+  <p class="max-w-7xl mx-auto px-6 py-6 opacity-70">Loading…</p>
 {:else if err}
-  <pre class="page" style="color:#ff6b6b">{err}</pre>
+  <pre class="max-w-7xl mx-auto px-6 py-6 text-red-400">{err}</pre>
 {:else}
-  <div class="page">
-    <div class="toolbar">
-      <h1 style="margin:0;font-size:20px;font-weight:700">{puzzle!.title}</h1>
-      <div style="flex:1"></div>
+  <div class="max-w-7xl mx-auto px-6 py-6 grid grid-rows-[auto_1fr] gap-4 min-h-[100dvh]">
+    <!-- Toolbar -->
+    <div
+      bind:this={toolbarEl}
+      class="sticky top-0 z-10 flex items-center gap-3 px-4 py-3
+             rounded-2xl border border-[#1a2a43]
+             bg-gradient-to-b from-[rgba(18,26,43,.85)] to-[rgba(18,26,43,.65)]
+             backdrop-blur-md"
+    >
+      <h1 class="m-0 text-[20px] font-bold">{puzzle!.title}</h1>
+      <div class="flex-1" />
 
-      <button class="btn btn-primary"
-              on:click={(e) => clearSelection(e)}
-              title="Clear selection (Shift-click to also clear solved groups)"
-              disabled={selection.length === 0 && solved.length === 0}>
+      <button
+        class="inline-flex items-center h-9 px-3 rounded-lg font-semibold
+               bg-[#0f3a38] text-[#bff7ee] border border-[#14615b]
+               hover:bg-[#12524f] hover:border-[#18837a]
+               disabled:opacity-50"
+        on:click={(e) => clearSelection(e)}
+        disabled={selection.length === 0 && solved.length === 0}
+        title="Clear selection (Shift-click to also clear solved groups)"
+      >
         Clear
       </button>
 
-      <button class="btn btn-ghost"
-              on:click={shuffleUnsolved}
-              title="Shuffle unsolved cards">
+      <button
+        class="inline-flex items-center h-9 px-3 rounded-lg font-semibold
+               border border-[#304a76] text-[#cfe1ff] bg-transparent
+               hover:bg-[#14223d]"
+        on:click={shuffleUnsolved}
+        title="Shuffle unsolved cards"
+      >
         Shuffle
       </button>
 
       {#each solved as gid}
-        <span class="badge"><span class="badge-dot"></span>{groupName(puzzle!, gid)}</span>
+        <span class="inline-flex items-center gap-2 rounded-full px-3 h-8 text-sm
+                     text-[#0f766e] bg-[rgba(20,184,166,.16)] border border-[rgba(20,184,166,.35)]">
+          <span class="w-2 h-2 rounded-full bg-[#0f766e]" />
+          {groupName(puzzle!, gid)}
+        </span>
       {/each}
     </div>
 
-    <!-- Wrap the grid so the effect can absolutely-position over it -->
-    <div class="board-wrap" style="position:relative;width:fit-content;margin-inline:auto;">
-      <!-- Completion effect (uses static image at /images/*) -->
+    <!-- Board + completion effect -->
+    <div class="relative w-fit mx-auto">
       <CompletionRing
         visible={showRing}
         spotImage="/images/HealthSpaces_Icon6_circle.png"
@@ -159,8 +158,11 @@
         sizeMax={20}
         autoHideMs={2500}
       />
-
-      <div class="board" class:is-shaking={shaking}>
+      <div
+        class="grid"
+        class:is-shaking={shaking}
+        style={`grid-template-columns: repeat(4, ${cellPx}px); grid-auto-rows: ${cellPx}px; gap:14px;`}
+      >
         {#each order as wid (wid)}
           {@const w = puzzle!.words.find(x => x.id === wid)!}
           <PuzzleCard
