@@ -6,6 +6,97 @@
   // URL param
   let puzzleId = '';
 
+  let generating = false;
+
+  function clearAll() {
+  // wipe everything but keep the current slider counts
+  title = '';
+
+  // rebuild categories to exactly match current counts
+  categories = Array.from({ length: categoryCount }, () => ({
+    name: '',
+    words: Array.from({ length: wordCount }, () => '')
+  }));
+
+  // persist the cleared state
+  localStorage.setItem(
+    draftKey(),
+    JSON.stringify({ title, categoryCount, wordCount, categories })
+  );
+
+  statusMsg = 'All categories and words cleared.';
+  statusType = 'info';
+}
+
+async function generateAll() {
+  try {
+    // ✅ Require category names first
+    for (let i = 0; i < categories.length; i++) {
+      if (!categories[i].name.trim()) {
+        statusMsg = `Please fill all Category before generating.`;
+        statusType = 'error';
+        return;
+      }
+    }
+
+    generating = true;
+    statusMsg = '';
+    statusType = 'info';
+
+    const payload = {
+      categories: categories.map((c) => {
+        const seed = c.words.filter((w) => w.trim().length > 0);
+        const need = Math.max(0, wordCount - seed.length);
+        return { name: c.name?.trim() || '', seedWords: seed, need };
+      })
+    };
+
+    const totalNeed = payload.categories.reduce((n, x) => n + x.need, 0);
+    if (totalNeed === 0) {
+      statusMsg = 'All word slots are already filled.';
+      statusType = 'success';
+      return;
+    }
+
+    const res = await fetch('/api/generate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+
+    const data = await res.json().catch(() => ({}));
+
+    if (!res.ok) {
+      throw new Error(data?.error || `Server error ${res.status}`);
+    }
+
+    const groups: string[][] = Array.isArray(data?.groups) ? data.groups : [];
+    categories = categories.map((cat, i) => {
+      const toFill = (groups[i] ?? []).map((w) => (w ?? '').trim()).filter(Boolean);
+      if (!toFill.length) return cat;
+
+      const filled = [...cat.words];
+      let k = 0;
+      for (let j = 0; j < filled.length && k < toFill.length; j++) {
+        if (!filled[j] || !filled[j].trim()) filled[j] = toFill[k++];
+      }
+      return { ...cat, words: filled };
+    });
+
+    saveDraftSoon();
+    statusMsg = 'Generated words added to empty slots.';
+    statusType = 'success';
+  } catch (err: any) {
+    console.error(err);
+    statusMsg = err?.message || 'Failed to generate words. Please try again.';
+    statusType = 'error';
+  } finally {
+    generating = false;
+  }
+}
+
+
+
   // Form state
   let title = '';
   let categoryCount = 4;
@@ -144,6 +235,7 @@
     else location.href = '/';
   }
 </script>
+
 
 <!-- PAGE -->
 <div class="min-h-screen bg-[#0B0F12]">
@@ -285,19 +377,49 @@ SolvedGroup2: {debug.SolvedGroup2}
       </div>
     {/if}
 
-    <!-- Centered action -->
-    <div class="flex items-center justify-center pt-2">
-      <button
-        on:click={onSave}
-        class="inline-flex items-center gap-2 px-5 py-2.5 rounded-full
-               bg-[#0a2f2b] text-[#F1FFFD] font-semibold ring-1 ring-[#2EE8C2]/40
-               hover:bg-[#0c3a35] focus:outline-none focus-visible:ring-2
-               focus-visible:ring-[#2EE8C2]/60 disabled:opacity-50"
-        disabled={saving}
-      >
-        <span class="inline-block w-3 h-3 rounded-full bg-[#2EE8C2]"></span>
-        {saving ? 'Saving…' : 'Save & Play'}
-      </button>
-    </div>
+<!-- Actions under Live Preview -->
+<div class="flex items-center justify-center gap-3 pt-4">
+  <!-- Clear -->
+  <button
+    type="button"
+    on:click={clearAll}
+    class="inline-flex items-center gap-2 px-5 py-2.5 rounded-full
+           bg-transparent text-[#F1FFFD] font-semibold ring-1 ring-[#2EE8C2]/30
+           hover:bg-[#0a2f2b]/40 hover:ring-[#2EE8C2]/60
+           focus:outline-none focus-visible:ring-2 focus-visible:ring-[#2EE8C2]/60"
+  >
+    Clear
+  </button>
+
+  <!-- Save & Play -->
+  <button
+    type="button"
+    on:click={onSave}
+    class="inline-flex items-center gap-2 px-5 py-2.5 rounded-full
+           bg-[#0a2f2b] text-[#F1FFFD] font-semibold ring-1 ring-[#2EE8C2]/40
+           hover:bg-[#0c3a35] focus:outline-none focus-visible:ring-2
+           focus-visible:ring-[#2EE8C2]/60 disabled:opacity-50"
+    disabled={saving}
+  >
+    <span class="inline-block w-3 h-3 rounded-full bg-[#2EE8C2]"></span>
+    {saving ? 'Saving…' : 'Save & Play'}
+  </button>
+
+  <!-- Generate -->
+  <button
+    type="button"
+    on:click={generateAll}
+    class="inline-flex items-center gap-2 px-5 py-2.5 rounded-full
+           bg-[#2EE8C2] text-[#0B0F12] font-semibold ring-1 ring-[#2EE8C2]/40
+           hover:bg-[#24bfa1] focus:outline-none focus-visible:ring-2
+           focus-visible:ring-[#2EE8C2]/60 disabled:opacity-60"
+    disabled={generating}
+  >
+    {generating ? 'Generating…' : 'Generate'}
+  </button>
+</div>
+
+
+
   </div>
 </div>
