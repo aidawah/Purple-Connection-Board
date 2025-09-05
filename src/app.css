@@ -2,26 +2,17 @@
 @plugin '@tailwindcss/forms';
 @plugin '@tailwindcss/typography';
 
-/* project tokens using the new @theme API */
-@theme {
-	--color-brand: oklch(58% 0.2 265);
-}
+/* Make Tailwind's `dark:` utilities respond to .dark on <html> */
+@custom-variant dark (&:where(.dark, .dark *));
 
-:root {
-	color-scheme: light;
-}
-.dark {
-	color-scheme: dark;
-}
-html,
-body,
-#svelte {
-	height: 100%;
-}
+@theme { --color-brand: #20e3c3; }
+
+:root { color-scheme: light; }
+.dark  { color-scheme: dark; }
+
+html, body, #svelte { height: 100%; }
 
 /* Prevents the bottom nav from covering content on small screens. */
 @media (max-width: 767px) {
-	main {
-		padding-bottom: 4rem;
-	}
+  main { padding-bottom: 4rem; }
 }
