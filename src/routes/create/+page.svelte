@@ -6,96 +6,12 @@
   // URL param
   let puzzleId = '';
 
+  // UI state
   let generating = false;
-
-  function clearAll() {
-  // wipe everything but keep the current slider counts
-  title = '';
-
-  // rebuild categories to exactly match current counts
-  categories = Array.from({ length: categoryCount }, () => ({
-    name: '',
-    words: Array.from({ length: wordCount }, () => '')
-  }));
-
-  // persist the cleared state
-  localStorage.setItem(
-    draftKey(),
-    JSON.stringify({ title, categoryCount, wordCount, categories })
-  );
-
-  statusMsg = 'All categories and words cleared.';
-  statusType = 'info';
-}
-
-async function generateAll() {
-  try {
-    // ✅ Require category names first
-    for (let i = 0; i < categories.length; i++) {
-      if (!categories[i].name.trim()) {
-        statusMsg = `Please fill all Category before generating.`;
-        statusType = 'error';
-        return;
-      }
-    }
-
-    generating = true;
-    statusMsg = '';
-    statusType = 'info';
-
-    const payload = {
-      categories: categories.map((c) => {
-        const seed = c.words.filter((w) => w.trim().length > 0);
-        const need = Math.max(0, wordCount - seed.length);
-        return { name: c.name?.trim() || '', seedWords: seed, need };
-      })
-    };
-
-    const totalNeed = payload.categories.reduce((n, x) => n + x.need, 0);
-    if (totalNeed === 0) {
-      statusMsg = 'All word slots are already filled.';
-      statusType = 'success';
-      return;
-    }
-
-    const res = await fetch('/api/generate', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    });
-
-    const data = await res.json().catch(() => ({}));
-
-    if (!res.ok) {
-      throw new Error(data?.error || `Server error ${res.status}`);
-    }
-
-    const groups: string[][] = Array.isArray(data?.groups) ? data.groups : [];
-    categories = categories.map((cat, i) => {
-      const toFill = (groups[i] ?? []).map((w) => (w ?? '').trim()).filter(Boolean);
-      if (!toFill.length) return cat;
-
-      const filled = [...cat.words];
-      let k = 0;
-      for (let j = 0; j < filled.length && k < toFill.length; j++) {
-        if (!filled[j] || !filled[j].trim()) filled[j] = toFill[k++];
-      }
-      return { ...cat, words: filled };
-    });
-
-    saveDraftSoon();
-    statusMsg = 'Generated words added to empty slots.';
-    statusType = 'success';
-  } catch (err: any) {
-    console.error(err);
-    statusMsg = err?.message || 'Failed to generate words. Please try again.';
-    statusType = 'error';
-  } finally {
-    generating = false;
-  }
-}
-
-
+  let saving = false;
+  let statusMsg = '';
+  let statusType: 'info' | 'success' | 'error' = 'info';
+  let showDebug = false;
 
   // Form state
   let title = '';
@@ -104,7 +20,7 @@ async function generateAll() {
   type Cat = { name: string; words: string[] };
   let categories: Cat[] = [];
 
-  // Derived for preview (and parity with your snippet)
+  // Derived
   $: previewWords = categories.flatMap((c) => c.words);
   $: previewGroups = (() => {
     const groups: number[][] = [];
@@ -116,28 +32,18 @@ async function generateAll() {
     return groups;
   })();
 
-  // Status (placeholder)
-  let saving = false;
-  let statusMsg = '';
-  let statusType: 'info' | 'success' | 'error' = 'info';
-
-  // Debug toggle (hidden by default)
-  let showDebug = false;
-
-  // Mock debug data content
+  // Debug mock
   $: debug = {
     'Selected Words': [],
     'Selected grid indices': [],
     'Selected grid states': [],
     Order:
-      '[] - orig: [] (0-3,4-7,8-11,12-15) – ' +
-      'flags: ' +
-      JSON.stringify(Array(16).fill(false)),
+      '[] - orig: [] (0-3,4-7,8-11,12-15) – ' + 'flags: ' + JSON.stringify(Array(16).fill(false)),
     SolvedGroup: JSON.stringify(Array(categoryCount).fill(false)),
     SolvedGroup2: JSON.stringify(Array(4).fill(false))
   };
 
-  // Local draft per puzzle id
+  // Draft key
   const draftKey = () => `create_draft_${puzzleId}`;
 
   function initCategories() {
@@ -149,7 +55,6 @@ async function generateAll() {
 
   onMount(() => {
     puzzleId = get(page).params.id ?? '';
-    // try load draft
     const raw = localStorage.getItem(draftKey());
     if (raw) {
       try {
@@ -158,9 +63,7 @@ async function generateAll() {
         categoryCount = d.categoryCount ?? 4;
         wordCount = d.wordCount ?? 4;
         categories = Array.isArray(d.categories) ? d.categories : [];
-      } catch {
-        // ignore parsing issues
-      }
+      } catch {}
     }
     if (categories.length === 0) initCategories();
   });
@@ -198,7 +101,80 @@ async function generateAll() {
     saveDraftSoon();
   }
 
-  // Placeholder save
+  function clearAll() {
+    title = '';
+    categories = Array.from({ length: categoryCount }, () => ({
+      name: '',
+      words: Array.from({ length: wordCount }, () => '')
+    }));
+    localStorage.setItem(draftKey(), JSON.stringify({ title, categoryCount, wordCount, categories }));
+    statusMsg = 'All categories and words cleared.';
+    statusType = 'info';
+  }
+
+  async function generateAll() {
+    try {
+      for (let i = 0; i < categories.length; i++) {
+        if (!categories[i].name.trim()) {
+          statusMsg = `Please fill all Category before generating.`;
+          statusType = 'error';
+          return;
+        }
+      }
+
+      generating = true;
+      statusMsg = '';
+      statusType = 'info';
+
+      const payload = {
+        categories: categories.map((c) => {
+          const seed = c.words.filter((w) => w.trim().length > 0);
+          const need = Math.max(0, wordCount - seed.length);
+          return { name: c.name?.trim() || '', seedWords: seed, need };
+        })
+      };
+
+      const totalNeed = payload.categories.reduce((n, x) => n + x.need, 0);
+      if (totalNeed === 0) {
+        statusMsg = 'All word slots are already filled.';
+        statusType = 'success';
+        return;
+      }
+
+      const res = await fetch('/api/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || `Server error ${res.status}`);
+
+      const groups: string[][] = Array.isArray(data?.groups) ? data.groups : [];
+      categories = categories.map((cat, i) => {
+        const toFill = (groups[i] ?? []).map((w) => (w ?? '').trim()).filter(Boolean);
+        if (!toFill.length) return cat;
+
+        const filled = [...cat.words];
+        let k = 0;
+        for (let j = 0; j < filled.length && k < toFill.length; j++) {
+          if (!filled[j] || !filled[j].trim()) filled[j] = toFill[k++];
+        }
+        return { ...cat, words: filled };
+      });
+
+      saveDraftSoon();
+      statusMsg = 'Generated words added to empty slots.';
+      statusType = 'success';
+    } catch (err: any) {
+      console.error(err);
+      statusMsg = err?.message || 'Failed to generate words. Please try again.';
+      statusType = 'error';
+    } finally {
+      generating = false;
+    }
+  }
+
   function onSave() {
     statusMsg = '';
     if (!title.trim()) {
@@ -236,67 +212,97 @@ async function generateAll() {
   }
 </script>
 
-
-<!-- PAGE -->
-<div class="min-h-screen bg-[#0B0F12]">
-  <div class="max-w-6xl mx-auto px-4 py-8 space-y-8">
+<!-- PAGE with teal brand accents -->
+<div class="min-h-screen bg-white text-zinc-900 dark:bg-black dark:text-zinc-100">
+  <div class="mx-auto w-full max-w-6xl px-3 sm:px-4 md:px-6 py-4 sm:py-6 md:py-8 space-y-6 sm:space-y-8">
 
     <!-- Header -->
-    <div class="flex items-center justify-between">
-      <h1 class="text-2xl sm:text-3xl font-bold tracking-tight text-[#F1FFFD]">Create Puzzle</h1>
-      <span class="text-xs text-white/50">ID: {puzzleId}</span>
+    <div class="relative overflow-hidden rounded-xl sm:rounded-2xl border border-zinc-200 bg-zinc-50 p-3 sm:p-4 dark:border-zinc-800 dark:bg-zinc-900">
+      <div class="absolute inset-x-0 -top-1 h-1 bg-brand/60"></div>
+      <div class="flex items-center justify-between gap-2">
+        <h1 class="text-xl sm:text-2xl md:text-3xl font-bold tracking-tight">
+          Create Puzzle
+          <span class="ml-2 align-middle rounded-full bg-brand/20 px-2 py-0.5 text-[10px] sm:text-xs font-semibold text-brand ring-1 ring-inset ring-brand/40">
+            New
+          </span>
+        </h1>
+        <span class="text-[10px] sm:text-xs text-zinc-500 dark:text-zinc-400 shrink-0">
+          ID: <span class="font-medium text-brand">{puzzleId}</span>
+        </span>
+      </div>
     </div>
 
     <!-- Title -->
     <div>
-      <label for="title" class="block mb-1 text-sm text-[#F1FFFD]/80">Title</label>
+      <label for="title" class="mb-1 block text-xs sm:text-sm text-zinc-700 dark:text-zinc-300">
+        Title
+        <span class="ml-2 rounded px-1.5 py-0.5 text-[9px] sm:text-[10px] font-semibold text-brand ring-1 ring-inset ring-brand/50">required</span>
+      </label>
       <input
         id="title"
         type="text"
         bind:value={title}
         on:input={saveDraftSoon}
         placeholder="e.g., Animals & Colors"
-        class="w-full px-3 py-2.5 rounded-xl bg-[#12181D] border border-white/10 text-[#F1FFFD]
-               placeholder-[#F1FFFD]/40 focus:outline-none focus:ring-2 focus:ring-[#2EE8C2]/60"
+        class="w-full rounded-lg sm:rounded-xl border border-zinc-200 bg-white px-3 py-2 sm:py-2.5 text-sm sm:text-base text-zinc-900 placeholder-zinc-400
+               shadow-sm focus:outline-none focus:ring-2 focus:ring-brand
+               dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100 dark:placeholder-zinc-500"
       />
     </div>
 
     <!-- Sliders -->
-    <div class="grid sm:grid-cols-2 gap-6">
+    <div class="grid gap-4 sm:gap-6 sm:grid-cols-2">
       <div>
-        <label for="categoryCount" class="block mb-2 text-sm text-[#F1FFFD]/80">
-          Categories: <span class="font-semibold text-[#F1FFFD]">{categoryCount}</span>
+        <label for="categoryCount" class="mb-1 sm:mb-2 block text-xs sm:text-sm text-zinc-700 dark:text-zinc-300">
+          Categories: <span class="font-semibold text-zinc-900 dark:text-zinc-100">{categoryCount}</span>
         </label>
-        <input id="categoryCount" type="range" min="2" max="8" bind:value={categoryCount} class="w-full accent-[#2EE8C2]" />
-        <p class="mt-1 text-xs text-[#F1FFFD]/60">How many groups your puzzle will have.</p>
+        <input
+          id="categoryCount"
+          type="range"
+          min="2"
+          max="8"
+          bind:value={categoryCount}
+          class="w-full accent-brand"
+        />
+        <p class="mt-1 text-[11px] sm:text-xs text-zinc-500 dark:text-zinc-400">How many groups your puzzle will have.</p>
       </div>
       <div>
-        <label for="wordCount" class="block mb-2 text-sm text-[#F1FFFD]/80">
-          Words each: <span class="font-semibold text-[#F1FFFD]">{wordCount}</span>
+        <label for="wordCount" class="mb-1 sm:mb-2 block text-xs sm:text-sm text-zinc-700 dark:text-zinc-300">
+          Words each: <span class="font-semibold text-zinc-900 dark:text-zinc-100">{wordCount}</span>
         </label>
-        <input id="wordCount" type="range" min="2" max="8" bind:value={wordCount} class="w-full accent-[#2EE8C2]" />
-        <p class="mt-1 text-xs text-[#F1FFFD]/60">How many words go into each category.</p>
+        <input
+          id="wordCount"
+          type="range"
+          min="2"
+          max="8"
+          bind:value={wordCount}
+          class="w-full accent-brand"
+        />
+        <p class="mt-1 text-[11px] sm:text-xs text-zinc-500 dark:text-zinc-400">How many words go into each category.</p>
       </div>
     </div>
 
     <!-- Categories list -->
-    <div class="space-y-4">
+    <div class="space-y-3 sm:space-y-4">
       {#each categories as cat, i}
-        <div class="rounded-2xl bg-[#0F1419] border border-white/10 p-4">
+        <div class="rounded-xl sm:rounded-2xl border border-zinc-200 bg-zinc-50 p-3 sm:p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
           <div class="grid gap-3 sm:grid-cols-4">
             <div class="sm:col-span-1">
-              <label for={"cat-" + i} class="block text-xs mb-1 text-[#F1FFFD]/70">Category {i + 1}</label>
+              <label for={"cat-" + i} class="mb-1 block text-[11px] sm:text-xs text-zinc-600 dark:text-zinc-400">
+                Category {i + 1}
+              </label>
               <input
                 id={"cat-" + i}
                 type="text"
                 bind:value={cat.name}
                 on:input={saveDraftSoon}
                 placeholder="Category name"
-                class="w-full px-3 py-2 rounded-lg bg-[#12181D] border border-white/10 text-[#F1FFFD]
-                       placeholder-[#F1FFFD]/40 focus:outline-none focus:ring-2 focus:ring-[#2EE8C2]/60"
+                class="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm sm:text-base text-zinc-900 placeholder-zinc-400
+                       focus:outline-none focus:ring-2 focus:ring-brand
+                       dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100 dark:placeholder-zinc-500"
               />
             </div>
-            <div class="sm:col-span-3 grid grid-cols-2 md:grid-cols-4 gap-3">
+            <div class="sm:col-span-3 grid grid-cols-2 gap-2 sm:gap-3 md:grid-cols-4">
               {#each cat.words as _, j}
                 <input
                   id={`w-${i}-${j}`}
@@ -304,8 +310,9 @@ async function generateAll() {
                   bind:value={categories[i].words[j]}
                   on:input={saveDraftSoon}
                   placeholder={`Word ${j + 1}`}
-                  class="px-3 py-2 rounded-lg bg-[#12181D] border border-white/10 text-[#F1FFFD]
-                         placeholder-[#F1FFFD]/40 focus:outline-none focus:ring-2 focus:ring-[#2EE8C2]/60"
+                  class="rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm sm:text-base text-zinc-900 placeholder-zinc-400
+                         focus:outline-none focus:ring-2 focus:ring-brand
+                         dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100 dark:placeholder-zinc-500"
                 />
               {/each}
             </div>
@@ -315,27 +322,26 @@ async function generateAll() {
     </div>
 
     <!-- Live Preview -->
-    <div class="rounded-2xl bg-[#0F1419] border border-white/10 p-4">
-      <div class="flex items-center justify-between mb-3">
-        <h2 class="text-lg font-semibold text-[#F1FFFD]">Live Preview</h2>
-        <div class="flex items-center gap-3">
-          <span class="text-xs text-[#F1FFFD]/60">Updates as you type</span>
-          <!-- quick toggle (optional) -->
-          <label class="inline-flex items-center gap-2 text-xs text-[#F1FFFD]/70 cursor-pointer select-none">
-            <input type="checkbox" bind:checked={showDebug} class="accent-[#2EE8C2]" />
-            Debug
+    <div class="rounded-xl sm:rounded-2xl border border-zinc-200 bg-zinc-50 p-3 sm:p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+      <div class="mb-2 sm:mb-3 flex items-center justify-between">
+        <h2 class="text-base sm:text-lg font-semibold">Live Preview</h2>
+        <div class="flex items-center gap-2 sm:gap-3">
+          <span class="text-[11px] sm:text-xs text-zinc-500 dark:text-zinc-400">Updates as you type</span>
+          <label class="inline-flex cursor-pointer select-none items-center gap-2 text-[11px] sm:text-xs text-zinc-600 dark:text-zinc-400">
+            <input type="checkbox" bind:checked={showDebug} class="accent-brand" />
+            <span class="text-brand">Debug</span>
           </label>
         </div>
       </div>
 
-      <div class="rounded-2xl bg-[#0B0F12]/50 border border-white/10 p-4">
-        <div class="rounded-xl border border-white/10 p-3">
+      <div class="rounded-xl border border-zinc-200 bg-zinc-100/70 p-3 sm:p-4 dark:border-zinc-800 dark:bg-black/40">
+        <div class="rounded-lg sm:rounded-xl border border-zinc-200 p-2 sm:p-3 dark:border-zinc-800">
           <!-- Grid -->
-          <div class="grid grid-cols-4 gap-3 mb-3">
+          <div class="mb-2 sm:mb-3 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2 sm:gap-3">
             {#each Array.from({ length: categoryCount * wordCount }) as _, idx}
               <div
-                class="h-16 rounded-xl bg-[#0B0F12] border border-white/10 flex items-center justify-center
-                       text-[#F1FFFD]/90 text-sm"
+                class="flex h-12 sm:h-14 md:h-16 items-center justify-center rounded-lg sm:rounded-xl border border-zinc-200 bg-zinc-100 text-xs sm:text-sm text-zinc-700
+                       dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100"
                 title={previewWords[idx] || `Word ${idx + 1}`}
               >
                 {previewWords[idx] || ''}
@@ -343,10 +349,9 @@ async function generateAll() {
             {/each}
           </div>
 
-          <!-- Debug (togglable) -->
           {#if showDebug}
-            <div class="rounded-lg bg-black/40 border border-white/10 p-3">
-              <pre class="text-xs leading-relaxed text-[#F1FFFD]/80 overflow-auto">
+            <div class="rounded-lg border border-zinc-200 bg-zinc-100 p-2 sm:p-3 dark:border-zinc-800 dark:bg-black/40">
+              <pre class="overflow-auto text-[11px] sm:text-xs leading-relaxed text-zinc-700 dark:text-zinc-200">
 Selected Words: {JSON.stringify(debug['Selected Words'])}
 Selected grid indices: {JSON.stringify(debug['Selected grid indices'])}
 Selected grid states: {JSON.stringify(debug['Selected grid states'])}
@@ -364,62 +369,90 @@ SolvedGroup2: {debug.SolvedGroup2}
     <!-- Status -->
     {#if statusMsg}
       <div
-        class={`px-4 py-2 rounded-xl text-sm ring-1
+        class={`rounded-lg sm:rounded-xl px-3 sm:px-4 py-2 text-sm ring-1
           ${
             statusType === 'info'
-              ? 'bg-[#0ea5a3]/20 text-[#F1FFFD] ring-[#2EE8C2]/40'
+              ? 'bg-brand/10 text-zinc-900 ring-brand/40 dark:text-zinc-100'
               : statusType === 'success'
-              ? 'bg-emerald-600/20 text-[#F1FFFD] ring-emerald-400/40'
-              : 'bg-rose-600/20 text-[#F1FFFD] ring-rose-400/40'
+              ? 'bg-brand/10 text-zinc-900 ring-brand/40 dark:text-zinc-100'
+              : 'bg-brand/10 text-zinc-900 ring-brand/40 dark:text-zinc-100'
           }`}
       >
         {statusMsg}
       </div>
     {/if}
 
-<!-- Actions under Live Preview -->
-<div class="flex items-center justify-center gap-3 pt-4">
-  <!-- Clear -->
-  <button
-    type="button"
-    on:click={clearAll}
-    class="inline-flex items-center gap-2 px-5 py-2.5 rounded-full
-           bg-transparent text-[#F1FFFD] font-semibold ring-1 ring-[#2EE8C2]/30
-           hover:bg-[#0a2f2b]/40 hover:ring-[#2EE8C2]/60
-           focus:outline-none focus-visible:ring-2 focus-visible:ring-[#2EE8C2]/60"
+    <!-- Actions: desktop/tablet -->
+    <div class="hidden md:flex items-center justify-center gap-3 pt-4">
+      <button
+        type="button"
+        on:click={clearAll}
+        class="inline-flex items-center gap-2 rounded-full border border-brand/50 bg-transparent px-5 py-2.5 font-semibold text-brand
+               hover:bg-brand/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand"
+      >
+        Clear
+      </button>
+
+      <button
+        type="button"
+        on:click={onSave}
+        class="inline-flex items-center gap-2 rounded-full border border-brand/60 bg-brand/10 px-5 py-2.5 font-semibold text-brand
+               hover:bg-brand/20 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand disabled:opacity-50"
+        disabled={saving}
+      >
+        <span class="inline-block h-3 w-3 rounded-full bg-brand"></span>
+        {saving ? 'Saving…' : 'Save & Play'}
+      </button>
+
+      <button
+        type="button"
+        on:click={generateAll}
+        class="inline-flex items-center gap-2 rounded-full border border-brand bg-brand px-5 py-2.5 font-semibold text-black
+               hover:bg-brand/90 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand disabled:opacity-60"
+        disabled={generating}
+      >
+        {generating ? 'Generating…' : 'Generate'}
+      </button>
+    </div>
+
+    <!-- Spacer so content isn't hidden behind sticky bar on mobile -->
+    <div class="h-20 md:h-0"></div>
+  </div>
+
+  <!-- Sticky action bar: mobile only -->
+  <div
+    class="fixed md:hidden inset-x-0 bottom-0 z-40 border-t border-zinc-200 dark:border-zinc-800 bg-white/95 dark:bg-zinc-900/95 backdrop-blur supports-[backdrop-filter]:bg-white/70 supports-[backdrop-filter]:dark:bg-zinc-900/70"
+    style="padding-bottom: env(safe-area-inset-bottom);"
   >
-    Clear
-  </button>
-
-  <!-- Save & Play -->
-  <button
-    type="button"
-    on:click={onSave}
-    class="inline-flex items-center gap-2 px-5 py-2.5 rounded-full
-           bg-[#0a2f2b] text-[#F1FFFD] font-semibold ring-1 ring-[#2EE8C2]/40
-           hover:bg-[#0c3a35] focus:outline-none focus-visible:ring-2
-           focus-visible:ring-[#2EE8C2]/60 disabled:opacity-50"
-    disabled={saving}
-  >
-    <span class="inline-block w-3 h-3 rounded-full bg-[#2EE8C2]"></span>
-    {saving ? 'Saving…' : 'Save & Play'}
-  </button>
-
-  <!-- Generate -->
-  <button
-    type="button"
-    on:click={generateAll}
-    class="inline-flex items-center gap-2 px-5 py-2.5 rounded-full
-           bg-[#2EE8C2] text-[#0B0F12] font-semibold ring-1 ring-[#2EE8C2]/40
-           hover:bg-[#24bfa1] focus:outline-none focus-visible:ring-2
-           focus-visible:ring-[#2EE8C2]/60 disabled:opacity-60"
-    disabled={generating}
-  >
-    {generating ? 'Generating…' : 'Generate'}
-  </button>
-</div>
-
-
-
+    <div class="mx-auto max-w-6xl px-3 py-2">
+      <div class="grid grid-cols-3 gap-2">
+        <button
+          type="button"
+          on:click={clearAll}
+          class="w-full rounded-full border border-brand/50 bg-transparent px-3 py-2 text-sm font-semibold text-brand
+                 hover:bg-brand/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand"
+        >
+          Clear
+        </button>
+        <button
+          type="button"
+          on:click={onSave}
+          class="w-full rounded-full border border-brand/60 bg-brand/10 px-3 py-2 text-sm font-semibold text-brand
+                 hover:bg-brand/20 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand disabled:opacity-50"
+          disabled={saving}
+        >
+          {saving ? 'Saving…' : 'Save'}
+        </button>
+        <button
+          type="button"
+          on:click={generateAll}
+          class="w-full rounded-full border border-brand bg-brand px-3 py-2 text-sm font-semibold text-black
+                 hover:bg-brand/90 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand disabled:opacity-60"
+          disabled={generating}
+        >
+          {generating ? '…' : 'Generate'}
+        </button>
+      </div>
+    </div>
   </div>
 </div>
