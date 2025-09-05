@@ -16,3 +16,19 @@ html, body, #svelte { height: 100%; }
 @media (max-width: 767px) {
   main { padding-bottom: 4rem; }
 }
+
+/* --- Connection puzzle: shake animation (safe, additive) --- */
+@theme {
+  @keyframes puzzle-shake {
+    10%, 90% { transform: translateX(-1px); }
+    20%, 80% { transform: translateX( 2px); }
+    30%, 50%, 70% { transform: translateX(-4px); }
+    40%, 60% { transform: translateX( 4px); }
+  }
+}
+
+/* Utility you can toggle with class:animate-puzzle-shake={shaking} */
+@utility animate-puzzle-shake {
+  animation: puzzle-shake .35s both;
+  will-change: transform;
+}
