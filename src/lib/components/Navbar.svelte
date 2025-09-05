@@ -10,6 +10,21 @@
 	import ProfileModal from './ProfileModal.svelte';
 	let showProfileModal = false;
 	
+	import { browser } from '$app/environment';
+	
+	let userData = { name: '', email: '', bio: '', theme: 'light' };
+	if (browser) {
+		userData = JSON.parse(localStorage.getItem('userProfile') || '{"name":"","email":"","bio":"","theme":"light"}');
+	}
+	
+	function handleProfileSave(event: CustomEvent) {
+		userData = {...event.detail}; // Create new object for reactivity
+		if (browser) {
+			localStorage.setItem('userProfile', JSON.stringify(userData));
+			document.documentElement.classList.toggle('dark', userData.theme === 'dark');
+		}
+	}
+	
 	function toggleDarkMode() {
 		const isDark = document.documentElement.classList.toggle('dark');
 		localStorage.setItem('theme', isDark ? 'dark' : 'light');
@@ -25,7 +40,7 @@
 	<div class="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-3">
 		<div class="flex-1 flex justify-center">
 			<ul class="flex list-none items-center gap-2 text-sm font-medium text-zinc-800 dark:text-zinc-100">
-				{#each items.filter(i => i.href !== '/profile') as it}
+				{#each items as it}
 					<li>
 						<a 
 							href={it.href} 
@@ -43,10 +58,14 @@
 				on:click={() => showProfileModal = true}
 				class="rounded-md px-3 py-2 hover:bg-zinc-100 dark:hover:bg-zinc-800"
 			>
-				My profile
+				{userData?.name || 'My profile'}
 			</button>
 			{#if showProfileModal}
-				<ProfileModal on:close={() => (showProfileModal = false)} />
+				<ProfileModal 
+					userData={userData}
+					on:save={handleProfileSave}
+					on:close={() => (showProfileModal = false)} 
+				/>
 			{/if}
 		</div>
 	</div>
@@ -76,7 +95,7 @@
 				on:click={() => showProfileModal = true}
 				class="mx-1 my-1 flex w-full items-center justify-center rounded-md hover:bg-zinc-100 dark:hover:bg-zinc-800"
 			>
-				My profile
+				{userData?.name || 'My profile'}
 			</button>
 		</li>
 	</ul>
