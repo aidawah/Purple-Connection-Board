@@ -155,11 +155,10 @@
 							<div>{puzzle.solveCount} solves</div>
 							<div>by {puzzle.createdBy}</div>
 						</div>
-						<a
-							href="/puzzle/{puzzle.id}"
-							class="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white text-sm font-medium rounded-md transition-colors"
-						>
-							Play Puzzle
+						<a href="/gameboard/{puzzle.id}"
+   							sveltekit:prefetch
+   								class="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white text-sm font-medium rounded-md transition-colors">
+  									Play Puzzle
 						</a>
 					</div>
 				</div>
