@@ -180,7 +180,7 @@
 
       <div
         class="grid"
-        class:animate-shake={shaking}  <!-- uses the tiny CSS below -->
+        class:animate-shake={shaking}
         style={`grid-template-columns: repeat(4, ${cellPx}px); grid-auto-rows: ${cellPx}px; gap:14px;`}
       >
         {#each order as wid (wid)}
