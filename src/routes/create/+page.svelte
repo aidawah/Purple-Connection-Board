@@ -1,10 +1,36 @@
 <script lang="ts">
+  import GameBoard from '$lib/components/GameBoard.svelte';
+  import type { Puzzle } from '$lib/types';
   import { onMount } from 'svelte';
   import { page } from '$app/stores';
   import { get } from 'svelte/store';
+  import { browser } from '$app/environment';
 
   // URL param
   let puzzleId = '';
+  let title = '';
+  let categoryCount = 4;
+  let wordCount = 4;
+  let categories: { name: string; words: string[] }[] = [];
+
+  // ---- SSR-safe localStorage helper ----
+  const ls = {
+    get(key: string) { if (!browser) return null; try { return localStorage.getItem(key); } catch { return null; } },
+    set(key: string, val: string) { if (!browser) return; try { localStorage.setItem(key, val); } catch {} }
+  };
+
+  // computed preview data
+  $: previewWords = categories.flatMap((cat) => cat.words);
+  $: previewGroups = (() => {
+    const groups: number[][] = [];
+    let offset = 0;
+    for (const cat of categories) {
+      const indices = cat.words.map((_, idx) => offset + idx);
+      groups.push(indices);
+      offset += cat.words.length;
+    }
+    return groups;
+  })();
 
   // UI state
   let generating = false;
@@ -13,32 +39,12 @@
   let statusType: 'info' | 'success' | 'error' = 'info';
   let showDebug = false;
 
-  // Form state
-  let title = '';
-  let categoryCount = 4;
-  let wordCount = 4;
-  type Cat = { name: string; words: string[] };
-  let categories: Cat[] = [];
-
-  // Derived
-  $: previewWords = categories.flatMap((c) => c.words);
-  $: previewGroups = (() => {
-    const groups: number[][] = [];
-    let offset = 0;
-    for (const c of categories) {
-      groups.push(c.words.map((_, i) => offset + i));
-      offset += c.words.length;
-    }
-    return groups;
-  })();
-
   // Debug mock
   $: debug = {
     'Selected Words': [],
     'Selected grid indices': [],
     'Selected grid states': [],
-    Order:
-      '[] - orig: [] (0-3,4-7,8-11,12-15) – ' + 'flags: ' + JSON.stringify(Array(16).fill(false)),
+    Order: '[] - orig: [] (0-3,4-7,8-11,12-15) – ' + 'flags: ' + JSON.stringify(Array(16).fill(false)),
     SolvedGroup: JSON.stringify(Array(categoryCount).fill(false)),
     SolvedGroup2: JSON.stringify(Array(4).fill(false))
   };
@@ -55,7 +61,7 @@
 
   onMount(() => {
     puzzleId = get(page).params.id ?? '';
-    const raw = localStorage.getItem(draftKey());
+    const raw = ls.get(draftKey());
     if (raw) {
       try {
         const d = JSON.parse(raw);
@@ -68,15 +74,13 @@
     if (categories.length === 0) initCategories();
   });
 
-  // Debounced draft save
+  // Debounced draft save (SSR-safe)
   let t: any;
   function saveDraftSoon() {
+    if (!browser) return;
     clearTimeout(t);
     t = setTimeout(() => {
-      localStorage.setItem(
-        draftKey(),
-        JSON.stringify({ title, categoryCount, wordCount, categories })
-      );
+      ls.set(draftKey(), JSON.stringify({ title, categoryCount, wordCount, categories }));
     }, 150);
   }
 
@@ -88,8 +92,9 @@
         .fill(0)
         .map(() => ({ name: '', words: Array(wordCount).fill('') }))
     ];
-    saveDraftSoon();
+    if (browser) saveDraftSoon();
   }
+
   $: {
     categories = categories.map((cat) => ({
       name: cat.name,
@@ -98,7 +103,7 @@
         ...Array(Math.max(0, wordCount - cat.words.length)).fill('')
       ]
     }));
-    saveDraftSoon();
+    if (browser) saveDraftSoon();
   }
 
   function clearAll() {
@@ -107,7 +112,7 @@
       name: '',
       words: Array.from({ length: wordCount }, () => '')
     }));
-    localStorage.setItem(draftKey(), JSON.stringify({ title, categoryCount, wordCount, categories }));
+    ls.set(draftKey(), JSON.stringify({ title, categoryCount, wordCount, categories }));
     statusMsg = 'All categories and words cleared.';
     statusType = 'info';
   }
@@ -121,7 +126,6 @@
           return;
         }
       }
-
       generating = true;
       statusMsg = '';
       statusType = 'info';
@@ -146,7 +150,6 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
-
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.error || `Server error ${res.status}`);
 
@@ -210,6 +213,35 @@
     if (history.length > 1) history.back();
     else location.href = '/';
   }
+
+// ---------- LIVE PREVIEW: Build a Puzzle for GameBoard (allow blanks) ----------
+const GROUP_IDS = ["A","B","C","D"] as const;
+function makeId(i:number,j:number,text:string){
+  return `${i}-${j}-${(text||'').trim().toLowerCase().replace(/[^a-z0-9]+/g,'-')}`;
+}
+
+$: livePuzzle = (() => {
+  // Keep it at classic 4×4 for now
+  if (categoryCount !== 4 || wordCount !== 4) return null;
+
+  // Ensure we always have 16 slots
+  const all = categories.flatMap(c => c.words);
+  if (all.length !== 16) return null;
+
+  const words = categories.flatMap((c, i) =>
+    c.words.map((w, j) => ({
+      id: makeId(i, j, w),
+      text: (w ?? '').trim(),        // may be ''
+      groupId: GROUP_IDS[i]          // A..D
+    }))
+  );
+
+  return {
+    id: `live-${puzzleId || 'draft'}`,
+    title: title?.trim() || 'Untitled Puzzle',
+    words
+  } as import('$lib/types').Puzzle;
+})();
 </script>
 
 <!-- PAGE with teal brand accents -->
@@ -256,28 +288,14 @@
         <label for="categoryCount" class="mb-1 sm:mb-2 block text-xs sm:text-sm text-zinc-700 dark:text-zinc-300">
           Categories: <span class="font-semibold text-zinc-900 dark:text-zinc-100">{categoryCount}</span>
         </label>
-        <input
-          id="categoryCount"
-          type="range"
-          min="2"
-          max="8"
-          bind:value={categoryCount}
-          class="w-full accent-brand"
-        />
+        <input id="categoryCount" type="range" min="2" max="8" bind:value={categoryCount} class="w-full accent-brand" />
         <p class="mt-1 text-[11px] sm:text-xs text-zinc-500 dark:text-zinc-400">How many groups your puzzle will have.</p>
       </div>
       <div>
         <label for="wordCount" class="mb-1 sm:mb-2 block text-xs sm:text-sm text-zinc-700 dark:text-zinc-300">
           Words each: <span class="font-semibold text-zinc-900 dark:text-zinc-100">{wordCount}</span>
         </label>
-        <input
-          id="wordCount"
-          type="range"
-          min="2"
-          max="8"
-          bind:value={wordCount}
-          class="w-full accent-brand"
-        />
+        <input id="wordCount" type="range" min="2" max="8" bind:value={wordCount} class="w-full accent-brand" />
         <p class="mt-1 text-[11px] sm:text-xs text-zinc-500 dark:text-zinc-400">How many words go into each category.</p>
       </div>
     </div>
@@ -288,9 +306,7 @@
         <div class="rounded-xl sm:rounded-2xl border border-zinc-200 bg-zinc-50 p-3 sm:p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
           <div class="grid gap-3 sm:grid-cols-4">
             <div class="sm:col-span-1">
-              <label for={"cat-" + i} class="mb-1 block text-[11px] sm:text-xs text-zinc-600 dark:text-zinc-400">
-                Category {i + 1}
-              </label>
+              <label for={"cat-" + i} class="mb-1 block text-[11px] sm:text-xs text-zinc-600 dark:text-zinc-400">Category {i + 1}</label>
               <input
                 id={"cat-" + i}
                 type="text"
@@ -322,62 +338,35 @@
     </div>
 
     <!-- Live Preview -->
-    <div class="rounded-xl sm:rounded-2xl border border-zinc-200 bg-zinc-50 p-3 sm:p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
-      <div class="mb-2 sm:mb-3 flex items-center justify-between">
-        <h2 class="text-base sm:text-lg font-semibold">Live Preview</h2>
-        <div class="flex items-center gap-2 sm:gap-3">
-          <span class="text-[11px] sm:text-xs text-zinc-500 dark:text-zinc-400">Updates as you type</span>
-          <label class="inline-flex cursor-pointer select-none items-center gap-2 text-[11px] sm:text-xs text-zinc-600 dark:text-zinc-400">
-            <input type="checkbox" bind:checked={showDebug} class="accent-brand" />
-            <span class="text-brand">Debug</span>
-          </label>
+    <div class="mt-6 space-y-3">
+      <h2 class="text-lg font-semibold">Live Preview</h2>
+
+      {#if livePuzzle}
+        <div class="rounded-xl border border-brand/30 p-3">
+          <GameBoard puzzle={livePuzzle} />
         </div>
-      </div>
-
-      <div class="rounded-xl border border-zinc-200 bg-zinc-100/70 p-3 sm:p-4 dark:border-zinc-800 dark:bg-black/40">
-        <div class="rounded-lg sm:rounded-xl border border-zinc-200 p-2 sm:p-3 dark:border-zinc-800">
-          <!-- Grid -->
-          <div class="mb-2 sm:mb-3 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2 sm:gap-3">
-            {#each Array.from({ length: categoryCount * wordCount }) as _, idx}
-              <div
-                class="flex h-12 sm:h-14 md:h-16 items-center justify-center rounded-lg sm:rounded-xl border border-zinc-200 bg-zinc-100 text-xs sm:text-sm text-zinc-700
-                       dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100"
-                title={previewWords[idx] || `Word ${idx + 1}`}
-              >
-                {previewWords[idx] || ''}
-              </div>
-            {/each}
-          </div>
-
-          {#if showDebug}
-            <div class="rounded-lg border border-zinc-200 bg-zinc-100 p-2 sm:p-3 dark:border-zinc-800 dark:bg-black/40">
-              <pre class="overflow-auto text-[11px] sm:text-xs leading-relaxed text-zinc-700 dark:text-zinc-200">
-Selected Words: {JSON.stringify(debug['Selected Words'])}
-Selected grid indices: {JSON.stringify(debug['Selected grid indices'])}
-Selected grid states: {JSON.stringify(debug['Selected grid states'])}
-
-Order: {debug.Order}
-SolvedGroup: {debug.SolvedGroup}
-SolvedGroup2: {debug.SolvedGroup2}
-              </pre>
+      {:else}
+        <div class="rounded-xl border border-zinc-200 bg-zinc-100/70 p-3 sm:p-4 dark:border-zinc-800 dark:bg-black/40">
+          <div class="rounded-lg sm:rounded-xl border border-zinc-200 p-2 sm:p-3 dark:border-zinc-800">
+            <div class="mb-2 sm:mb-3 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2 sm:gap-3">
+              {#each Array.from({ length: categoryCount * wordCount }) as _, idx}
+                <div
+                  class="flex h-12 sm:h-14 md:h-16 items-center justify-center rounded-lg sm:rounded-xl border border-zinc-200 bg-zinc-100 text-xs sm:text-sm text-zinc-700
+                         dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100"
+                  title={previewWords[idx] || `Word ${idx + 1}`}
+                >
+                  {previewWords[idx] || ''}
+                </div>
+              {/each}
             </div>
-          {/if}
+          </div>
         </div>
-      </div>
+      {/if}
     </div>
 
     <!-- Status -->
     {#if statusMsg}
-      <div
-        class={`rounded-lg sm:rounded-xl px-3 sm:px-4 py-2 text-sm ring-1
-          ${
-            statusType === 'info'
-              ? 'bg-brand/10 text-zinc-900 ring-brand/40 dark:text-zinc-100'
-              : statusType === 'success'
-              ? 'bg-brand/10 text-zinc-900 ring-brand/40 dark:text-zinc-100'
-              : 'bg-brand/10 text-zinc-900 ring-brand/40 dark:text-zinc-100'
-          }`}
-      >
+      <div class={`rounded-lg sm:rounded-xl px-3 sm:px-4 py-2 text-sm ring-1 bg-brand/10 text-zinc-900 ring-brand/40 dark:text-zinc-100`}>
         {statusMsg}
       </div>
     {/if}
@@ -389,9 +378,7 @@ SolvedGroup2: {debug.SolvedGroup2}
         on:click={clearAll}
         class="inline-flex items-center gap-2 rounded-full border border-brand/50 bg-transparent px-5 py-2.5 font-semibold text-brand
                hover:bg-brand/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand"
-      >
-        Clear
-      </button>
+      >Clear</button>
 
       <button
         type="button"
@@ -410,12 +397,9 @@ SolvedGroup2: {debug.SolvedGroup2}
         class="inline-flex items-center gap-2 rounded-full border border-brand bg-brand px-5 py-2.5 font-semibold text-black
                hover:bg-brand/90 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand disabled:opacity-60"
         disabled={generating}
-      >
-        {generating ? 'Generating…' : 'Generate'}
-      </button>
+      >{generating ? 'Generating…' : 'Generate'}</button>
     </div>
 
-    <!-- Spacer so content isn't hidden behind sticky bar on mobile -->
     <div class="h-20 md:h-0"></div>
   </div>
 
@@ -431,27 +415,21 @@ SolvedGroup2: {debug.SolvedGroup2}
           on:click={clearAll}
           class="w-full rounded-full border border-brand/50 bg-transparent px-3 py-2 text-sm font-semibold text-brand
                  hover:bg-brand/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand"
-        >
-          Clear
-        </button>
+        >Clear</button>
         <button
           type="button"
           on:click={onSave}
           class="w-full rounded-full border border-brand/60 bg-brand/10 px-3 py-2 text-sm font-semibold text-brand
                  hover:bg-brand/20 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand disabled:opacity-50"
           disabled={saving}
-        >
-          {saving ? 'Saving…' : 'Save'}
-        </button>
+        >{saving ? 'Saving…' : 'Save'}</button>
         <button
           type="button"
           on:click={generateAll}
           class="w-full rounded-full border border-brand bg-brand px-3 py-2 text-sm font-semibold text-black
                  hover:bg-brand/90 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand disabled:opacity-60"
           disabled={generating}
-        >
-          {generating ? '…' : 'Generate'}
-        </button>
+        >{generating ? '…' : 'Generate'}</button>
       </div>
     </div>
   </div>
