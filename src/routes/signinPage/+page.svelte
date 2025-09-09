@@ -1,6 +1,7 @@
 <!-- src/routes/signin/+page.svelte -->
 <script lang="ts">
   import { goto } from '$app/navigation';
+  import { signInWithGoogle, signInWithApple } from '$lib/firebase';
   import { browser } from '$app/environment';
 
   let errorMsg = '';
