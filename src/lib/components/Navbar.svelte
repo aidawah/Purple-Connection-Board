@@ -1,6 +1,17 @@
 <script lang="ts">
   import { page } from '$app/stores';
   import { browser } from '$app/environment';
+  import { goto } from '$app/navigation';
+  import { auth } from '$lib/firebase';
+  
+  const handleLogout = async () => {
+    try {
+      await auth.signOut();
+      goto('/signinPage');
+    } catch (error) {
+      console.error('Logout error:', error);
+    }
+  };
   import { onMount } from 'svelte';
   import ProfileModal from './ProfileModal.svelte';
 
@@ -17,24 +28,39 @@
 
   onMount(() => {
     if (!browser) return;
-    try {
-      userData = JSON.parse(
-        localStorage.getItem('userProfile') || '{"name":"","email":"","bio":"","theme":"light"}'
-      );
-      document.documentElement.classList.toggle('dark', userData.theme === 'dark');
-    } catch {}
+    
+    // Get user data from Firebase auth
+    const unsubscribe = auth.onAuthStateChanged(user => {
+      if (user) {
+        userData = {
+          name: user.displayName || '',
+          email: user.email || '',
+          bio: '',
+          theme: userData.theme
+        };
+      } else {
+        userData = { name: '', email: '', bio: '', theme: 'light' };
+      }
+    });
+
+    // Load theme from local storage (separate from user profile)
+    const savedTheme = localStorage.getItem('themePreference') || 'light';
+    document.documentElement.classList.toggle('dark', savedTheme === 'dark');
+    
+    return () => unsubscribe();
   });
 
   function handleProfileSave(event: CustomEvent) {
-    userData = { ...event.detail };
+    // Only save theme preference locally, not user profile data
+    const newTheme = event.detail.theme;
     if (browser) {
-      localStorage.setItem('userProfile', JSON.stringify(userData));
-      document.documentElement.classList.toggle('dark', userData.theme === 'dark');
+      localStorage.setItem('themePreference', newTheme);
+      document.documentElement.classList.toggle('dark', newTheme === 'dark');
     }
   }
 
   function initials(name: string) {
-    if (!name?.trim()) return 'U';
+    if (!name?.trim() || !userData.email) return '';
     const parts = name.trim().split(/\s+/).slice(0, 2);
     return parts.map((p) => p[0]?.toUpperCase() ?? '').join('');
   }
@@ -140,7 +166,7 @@ onMount(() => {
                focus:outline-none focus:ring-4 focus:ring-teal-300 dark:focus:ring-teal-700"
         aria-haspopup="true"
         aria-expanded={showUserMenu}
-        on:click={() => (showUserMenu = !showUserMenu)}
+        on:click={() => userData.email ? (showUserMenu = !showUserMenu) : goto('/signinPage')}
       >
         <span class="sr-only">Open user menu</span>
         <span class="w-8 h-8 rounded-full grid place-items-center font-semibold select-none">
@@ -148,15 +174,15 @@ onMount(() => {
         </span>
       </button>
 
-      {#if showUserMenu}
+      {#if showUserMenu && userData.email}
         <div
           use:clickOutside={() => (showUserMenu = false)}
           class="absolute right-0 mt-2 w-56 bg-white rounded-lg shadow-lg divide-y divide-gray-100 
                  dark:bg-gray-700 dark:divide-gray-600 z-50"
         >
           <div class="px-4 py-3">
-            <span class="block text-sm text-gray-900 dark:text-white">{userData?.name || 'Your Profile'}</span>
-            <span class="block text-sm text-gray-500 truncate dark:text-gray-400">{userData?.email || 'you@example.com'}</span>
+            <span class="block text-sm text-gray-900 dark:text-white">{userData?.name}</span>
+            <span class="block text-sm text-gray-500 truncate dark:text-gray-400">{userData?.email}</span>
           </div>
 <!-- Theme toggle inside profile dropdown -->
 <div class="px-3 pt-2 pb-3">
@@ -225,7 +251,7 @@ onMount(() => {
               <button
                 class="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-teal-50 hover:text-teal-700 
                        dark:text-gray-200 dark:hover:bg-teal-600/30 dark:hover:text-white"
-                on:click={() => alert('Implement sign out')}
+                on:click|preventDefault={handleLogout}
               >
                 Sign out
               </button>
@@ -266,10 +292,10 @@ onMount(() => {
 
       {/each}
 
-      <!-- Profile button -->
+      <!-- Profile/Sign In button -->
       <li class="flex">
         <button
-          on:click={() => (showProfileModal = true)}
+          on:click={() => userData.email ? showProfileModal = true : goto('/signinPage')}
           class="mx-1 my-2 flex w-full flex-col items-center justify-center gap-1
                  rounded-xl px-3
                  text-zinc-300 hover:text-teal-300 hover:bg-neutral-800/70
@@ -277,7 +303,7 @@ onMount(() => {
                  focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500/60"
         >
           <span class="h-1 w-6 rounded-full bg-transparent"></span>
-          <span class="leading-none">{userData?.name || 'My profile'}</span>
+          <span class="leading-none">{userData.email ? userData?.name : 'Sign In'}</span>
         </button>
       </li>
     </ul>
