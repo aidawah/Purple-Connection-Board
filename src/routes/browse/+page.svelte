@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { puzzles, type Puzzle } from '$lib/data/puzzles';
+	import PuzzleCard from "$lib/components/PuzzleCard.svelte";
 
 	let searchTerm = '';
 	let selectedCategory = 'All';
