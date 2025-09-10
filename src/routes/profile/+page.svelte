@@ -1,10 +1,11 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { browser } from '$app/environment';
+  import { goto } from '$app/navigation';
 
   // ---- theme + data toggles ----
   const BRAND = '#14b8a6';
-  const USE_FIREBASE = false; // flip to true when ready
+  const USE_FIREBASE = true; // ⬅️ turn on Firebase
 
   // ---- types ----
   type Profile = {
@@ -40,40 +41,30 @@
   // tab order: overview → mypuzzles → activity → settings
   let tab: 'overview' | 'mypuzzles' | 'activity' | 'settings' = 'overview';
 
+  // Start with empty/neutral values; Firebase will hydrate everything.
   let profile: Profile = {
-    name: 'Your Name',
-    email: 'you@example.com',
+    name: '',
+    email: '',
     photoURL: '',
-    bio: 'Tell the community a bit about you.',
+    bio: '',
     theme: 'system',
     publicProfile: true,
     notifications: { product: true, community: true, marketing: false },
     socials: { twitter: '', github: '', website: '' },
-    stats: { puzzlesCreated: 3, puzzlesSolved: 42, streakDays: 7 }
+    stats: { puzzlesCreated: 0, puzzlesSolved: 0, streakDays: 0 }
   };
 
-  // Placeholder “most recently played”
-  let lastPlayed: { id: string; title: string; progress?: number } | null =
-    USE_FIREBASE ? null : { id: 'demo-last', title: 'Tech Giants Connection', progress: 72 };
+  // Most recently played (from `plays` collection). Null => show the “no recent puzzle” card.
+  let lastPlayed: { id: string; title: string; progress?: number } | null = null;
 
-  // Placeholder “recent activity”
-  let recentActivity: Array<{ at: string; text: string }> = [
-    { at: 'Today',      text: 'Solved “Tech Giants Connection” ✅' },
-    { at: 'Yesterday',  text: 'Created “World Capitals” 🧩' },
-    { at: '2 days ago', text: 'Solved “Movie Directors” ✅' }
-  ];
+  // Recent activity timeline
+  let recentActivity: Array<{ at: string; text: string }> = [];
 
-  // Placeholder pinned list (left rail)
-  let pinnedPuzzles: Array<{ id: string; title: string; difficulty: 'Easy'|'Medium'|'Hard' }> = [
-    { id: 'demo-1', title: 'Movie Directors',     difficulty: 'Medium' },
-    { id: 'demo-2', title: 'Chemical Elements',   difficulty: 'Hard' }
-  ];
+  // Left-rail pinned list
+  let pinnedPuzzles: Array<{ id: string; title: string; difficulty: 'Easy'|'Medium'|'Hard' }> = [];
 
-  // Placeholder “My Puzzles”
-  let myPuzzles: MyPuzzle[] = [
-    { id: 'p1', title: 'Daily Challenge: Sports Teams', difficulty: 'Medium', category: 'Sports',     solveCount: 1247, isPinned: true },
-    { id: 'p2', title: 'Classic Literature Characters', difficulty: 'Hard',   category: 'Literature', solveCount: 892  }
-  ];
+  // “My Puzzles”
+  let myPuzzles: MyPuzzle[] = [];
 
   // ---- firebase (lazy) ----
   let fb: any = null; let ffs: any = null; let auth: any = null; let db: any = null;
@@ -81,35 +72,45 @@
 
   async function ensureFirebase() {
     if (!browser || !USE_FIREBASE) return;
-    if (!fb) fb = await import('$lib/firebase');
-    if (!ffs) ffs = await import('firebase/firestore');
-    if (!auth) auth = await import('firebase/auth');
+    if (!fb) fb = await import('$lib/firebase');                    // your wrapper
+    if (!ffs) ffs = await import('firebase/firestore');             // raw firestore helpers
+    if (!auth) auth = await import('firebase/auth');                // raw auth (for types/util)
     db = fb?.db || fb?.getFirestore?.(fb.app);
   }
 
   async function loadFromFirebase() {
     if (!USE_FIREBASE || !db) { loading = false; return; }
     try {
+      // Prefer your helper which already calls onAuthStateChanged under the hood
       const _auth = fb?.auth || auth?.getAuth?.();
       const user = _auth?.currentUser;
-      if (user?.uid) {
-        currentUID = user.uid;
-        profile.email = user.email ?? profile.email;
-        profile.name = user.displayName ?? profile.name;
-        profile.photoURL = user.photoURL ?? profile.photoURL;
-      }
-      if (!currentUID) { loading = false; return; }
 
+      // If not logged in, show a very gentle prompt / or send to signin
+      if (!user?.uid) {
+        loading = false;
+        // Optional redirect: comment out if you prefer staying on page.
+        // goto('/signin?next=/profile');
+        return;
+      }
+
+      currentUID = user.uid;
+
+      // Seed with Auth fields in case profile doc is missing some parts
+      profile.email = user.email ?? '';
+      profile.name = user.displayName ?? '';
+      profile.photoURL = user.photoURL ?? '';
+
+      // --- profiles/{uid}
       const docRef = ffs.doc(db, 'profiles', currentUID);
       const snap = await ffs.getDoc(docRef);
       if (snap.exists()) {
         const d = snap.data();
         profile = {
           uid: currentUID,
-          name: d.name ?? profile.name,
-          email: d.email ?? profile.email,
-          photoURL: d.photoURL ?? profile.photoURL,
-          bio: d.bio ?? profile.bio,
+          name: (d.name ?? profile.name) || '',
+          email: (d.email ?? profile.email) || '',
+          photoURL: d.photoURL ?? profile.photoURL ?? '',
+          bio: d.bio ?? '',
           theme: (d.theme ?? 'system'),
           publicProfile: !!d.publicProfile,
           notifications: {
@@ -128,62 +129,73 @@
             streakDays:     d.stats?.streakDays     ?? 0
           }
         };
+      } else {
+        // If the doc doesn't exist yet, keep Auth basics and zeros.
+        profile.uid = currentUID;
       }
 
-      // recent activity
-      const actQ = ffs.query(
-        ffs.collection(db, 'activity'),
-        ffs.where('uid', '==', currentUID),
-        ffs.orderBy('createdAt', 'desc'),
-        ffs.limit(15)
-      );
-      const actSnap = await ffs.getDocs(actQ);
-      recentActivity = actSnap.docs.map((doc: any) => {
-        const x = doc.data();
-        const when = x.createdAt?.toDate?.()?.toLocaleString?.() ?? 'recently';
-        const txt = x.type === 'puzzle_solved'
-          ? `Solved “${x.puzzleTitle ?? 'Untitled'}” ✅`
-          : `Created “${x.puzzleTitle ?? 'Untitled'}” 🧩`;
-        return { at: when, text: txt };
-      });
+      // --- activity (recent first)
+      try {
+        const actQ = ffs.query(
+          ffs.collection(db, 'activity'),
+          ffs.where('uid', '==', currentUID),
+          ffs.orderBy('createdAt', 'desc'),
+          ffs.limit(15)
+        );
+        const actSnap = await ffs.getDocs(actQ);
+        recentActivity = actSnap.docs.map((doc: any) => {
+          const x = doc.data();
+          const when = x.createdAt?.toDate?.()?.toLocaleString?.() ?? 'recently';
+          const txt = x.type === 'puzzle_solved'
+            ? `Solved “${x.puzzleTitle ?? 'Untitled'}” ✅`
+            : x.type === 'puzzle_created'
+            ? `Created “${x.puzzleTitle ?? 'Untitled'}” 🧩`
+            : x.text ?? 'Did something';
+          return { at: when, text: txt };
+        });
+      } catch { recentActivity = []; }
 
-      // pinned
-      const pinQ = ffs.query(
-        ffs.collection(db, 'puzzles'),
-        ffs.where('owner', '==', currentUID),
-        ffs.where('isPinned', '==', true),
-        ffs.limit(8)
-      );
-      const pinSnap = await ffs.getDocs(pinQ);
-      pinnedPuzzles = pinSnap.docs.map((d: any) => {
-        const x = d.data();
-        return { id: d.id, title: x.title ?? 'Untitled', difficulty: (x.difficulty ?? 'Medium') };
-      });
+      // --- pinned puzzles
+      try {
+        const pinQ = ffs.query(
+          ffs.collection(db, 'puzzles'),
+          ffs.where('owner', '==', currentUID),
+          ffs.where('isPinned', '==', true),
+          ffs.limit(8)
+        );
+        const pinSnap = await ffs.getDocs(pinQ);
+        pinnedPuzzles = pinSnap.docs.map((d: any) => {
+          const x = d.data();
+          return { id: d.id, title: x.title ?? 'Untitled', difficulty: (x.difficulty ?? 'Medium') };
+        });
+      } catch { pinnedPuzzles = []; }
 
-      // my puzzles
-      const myQ = ffs.query(
-        ffs.collection(db, 'puzzles'),
-        ffs.where('owner', '==', currentUID),
-        ffs.orderBy('createdAt', 'desc'),
-        ffs.limit(50)
-      );
-      const mySnap = await ffs.getDocs(myQ);
-      myPuzzles = mySnap.docs.map((d: any) => {
-        const x = d.data();
-        return {
-          id: d.id,
-          title: x.title ?? 'Untitled',
-          description: x.description ?? '',
-          category: x.category ?? 'General',
-          difficulty: (x.difficulty ?? 'Medium'),
-          imageUrl: x.imageUrl ?? '',
-          isPinned: !!x.isPinned,
-          solveCount: x.solveCount ?? 0,
-          createdAt: x.createdAt?.toDate?.()?.toISOString?.() ?? new Date().toISOString()
-        } as MyPuzzle;
-      });
+      // --- my puzzles (most recent first)
+      try {
+        const myQ = ffs.query(
+          ffs.collection(db, 'puzzles'),
+          ffs.where('owner', '==', currentUID),
+          ffs.orderBy('createdAt', 'desc'),
+          ffs.limit(50)
+        );
+        const mySnap = await ffs.getDocs(myQ);
+        myPuzzles = mySnap.docs.map((d: any) => {
+          const x = d.data();
+          return {
+            id: d.id,
+            title: x.title ?? 'Untitled',
+            description: x.description ?? '',
+            category: x.category ?? 'General',
+            difficulty: (x.difficulty ?? 'Medium'),
+            imageUrl: x.imageUrl ?? '',
+            isPinned: !!x.isPinned,
+            solveCount: x.solveCount ?? 0,
+            createdAt: x.createdAt?.toDate?.()?.toISOString?.() ?? new Date().toISOString()
+          } as MyPuzzle;
+        });
+      } catch { myPuzzles = []; }
 
-      // most recently played (optional when you wire Firestore)
+      // --- most recently played (optional)
       try {
         const playsQ = ffs.query(
           ffs.collection(db, 'plays'),
@@ -203,21 +215,23 @@
         } else {
           lastPlayed = null;
         }
-      } catch { /* ignore */ }
+      } catch { lastPlayed = null; }
 
     } catch (e) {
       console.error(e);
+      flash = { type: 'error', text: 'Failed to load your profile.' };
     } finally {
       loading = false;
+      if (flash) setTimeout(()=>flash=null, 2200);
     }
   }
 
   async function saveProfile() {
     if (!USE_FIREBASE) { flash = { type: 'info', text: 'Firebase disabled (mock save).' }; setTimeout(()=>flash=null,2200); return; }
-    if (!db) return;
+    if (!db || !currentUID) return;
     try {
       saving = true;
-      const docRef = ffs.doc(db, 'profiles', currentUID ?? 'demo-user');
+      const docRef = ffs.doc(db, 'profiles', currentUID);
       await ffs.setDoc(docRef, { ...profile, updatedAt: ffs.serverTimestamp() }, { merge: true });
       flash = { type: 'success', text: 'Profile saved!' };
     } catch (e) {
@@ -238,7 +252,29 @@
   onMount(async () => {
     document.documentElement.style.setProperty('--brand', BRAND);
     await ensureFirebase();
-    await loadFromFirebase();
+
+    if (USE_FIREBASE && fb?.onUserChanged) {
+      // Keep page reactive to auth changes
+      fb.onUserChanged(async (u: any) => {
+        loading = true;
+        if (!u) {
+          currentUID = null;
+          // Optional redirect; comment if you prefer to stay:
+          // goto('/signin?next=/profile');
+          loading = false;
+          return;
+        }
+        currentUID = u.uid;
+        // prime with auth
+        profile.email = u.email ?? '';
+        profile.name = u.displayName ?? '';
+        profile.photoURL = u.photoURL ?? '';
+        await loadFromFirebase();
+      });
+    } else {
+      // Fallback: attempt a one-time load
+      await loadFromFirebase();
+    }
   });
 </script>
 
@@ -262,10 +298,9 @@
       {/if}
     </div>
     <div class="grow pb-2">
-      <h1 class="text-2xl font-bold text-white drop-shadow-sm">{profile.name}</h1>
-      <p class="text-white/90">{profile.email}</p>
+      <h1 class="text-2xl font-bold text-white drop-shadow-sm">{profile.name || 'Your Profile'}</h1>
+      <p class="text-white/90">{profile.email || '—'}</p>
     </div>
-    <!-- Save button removed per request -->
   </div>
 </section>
 
@@ -301,7 +336,7 @@
     <!-- About -->
     <div class="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
       <h3 class="mb-2 text-lg font-semibold text-zinc-900 dark:text-zinc-100">About</h3>
-      <p class="text-sm text-zinc-700 dark:text-zinc-300">{profile.bio}</p>
+      <p class="text-sm text-zinc-700 dark:text-zinc-300">{profile.bio || 'Tell the community a bit about you.'}</p>
       <div class="mt-4 grid grid-cols-3 gap-3 text-center">
         <div class="rounded-xl border border-[color:var(--brand)]/20 p-3">
           <div class="text-xl font-bold text-[color:var(--brand)]">{profile.stats.puzzlesCreated}</div>
@@ -324,19 +359,24 @@
         <h3 class="text-lg font-semibold text-zinc-900 dark:text-zinc-100">Pinned Puzzles</h3>
         <a href="/browse" class="text-sm font-medium text-[color:var(--brand)] underline-offset-4 hover:underline">Browse →</a>
       </div>
-      <ul class="space-y-2">
-        {#each pinnedPuzzles as p}
-          <li class="flex items-center justify-between rounded-xl border border-zinc-200 px-3 py-2 dark:border-zinc-800">
-            <div class="flex items-center gap-2">
-              <svg viewBox="0 0 24 24" fill="currentColor" class="h-4 w-4 rotate-[-20deg] text-[color:var(--brand)]">
-                <circle cx="12" cy="7" r="3"/><rect x="11" y="9.5" width="2" height="7.5" rx="1"/><path d="M12 17l-2 5h4l-2-5z"/>
-              </svg>
-              <span class="text-sm text-zinc-800 dark:text-zinc-200">{p.title}</span>
-            </div>
-            <span class="rounded px-2 py-1 text-xs font-medium ring-1 ring-inset ring-[color:var(--brand)]/30">{p.difficulty}</span>
-          </li>
-        {/each}
-      </ul>
+
+      {#if pinnedPuzzles.length > 0}
+        <ul class="space-y-2">
+          {#each pinnedPuzzles as p}
+            <li class="flex items-center justify-between rounded-xl border border-zinc-200 px-3 py-2 dark:border-zinc-800">
+              <div class="flex items-center gap-2">
+                <svg viewBox="0 0 24 24" fill="currentColor" class="h-4 w-4 rotate-[-20deg] text-[color:var(--brand)]">
+                  <circle cx="12" cy="7" r="3"/><rect x="11" y="9.5" width="2" height="7.5" rx="1"/><path d="M12 17l-2 5h4l-2-5z"/>
+                </svg>
+                <span class="text-sm text-zinc-800 dark:text-zinc-200">{p.title}</span>
+              </div>
+              <span class="rounded px-2 py-1 text-xs font-medium ring-1 ring-inset ring-[color:var(--brand)]/30">{p.difficulty}</span>
+            </li>
+          {/each}
+        </ul>
+      {:else}
+        <div class="text-sm text-zinc-600 dark:text-zinc-400">No pinned puzzles.</div>
+      {/if}
     </div>
   </aside>
 
@@ -390,16 +430,21 @@
         <div class="border-b border-zinc-200 px-6 py-4 dark:border-zinc-800">
           <h3 class="text-lg font-semibold text-zinc-900 dark:text-zinc-100">Recent Activity</h3>
         </div>
-        <ul class="divide-y divide-zinc-200 dark:divide-zinc-800">
-          {#each recentActivity as a}
-            <li class="px-6 py-4">
-              <div class="flex items-center justify-between">
-                <span class="text-sm text-zinc-800 dark:text-zinc-200">{a.text}</span>
-                <span class="text-xs text-zinc-500 dark:text-zinc-400">{a.at}</span>
-              </div>
-            </li>
-          {/each}
-        </ul>
+
+        {#if recentActivity.length > 0}
+          <ul class="divide-y divide-zinc-200 dark:divide-zinc-800">
+            {#each recentActivity as a}
+              <li class="px-6 py-4">
+                <div class="flex items-center justify-between">
+                  <span class="text-sm text-zinc-800 dark:text-zinc-200">{a.text}</span>
+                  <span class="text-xs text-zinc-500 dark:text-zinc-400">{a.at}</span>
+                </div>
+              </li>
+            {/each}
+          </ul>
+        {:else}
+          <div class="p-8 text-center text-sm text-zinc-600 dark:text-zinc-400">No recent activity.</div>
+        {/if}
       </div>
 
     {:else if tab === 'mypuzzles'}
@@ -478,15 +523,20 @@
       <!-- Activity timeline -->
       <div class="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
         <h3 class="mb-4 text-lg font-semibold text-zinc-900 dark:text-zinc-100">Your Timeline</h3>
-        <ol class="relative ml-3 border-l border-zinc-200 pl-6 dark:border-zinc-800">
-          {#each recentActivity as a}
-            <li class="mb-6">
-              <span class="absolute -left-2.5 mt-1.5 h-2.5 w-2.5 rounded-full bg-[color:var(--brand)]"></span>
-              <div class="text-sm text-zinc-800 dark:text-zinc-200">{a.text}</div>
-              <div class="text-xs text-zinc-500 dark:text-zinc-400">{a.at}</div>
-            </li>
-          {/each}
-        </ol>
+
+        {#if recentActivity.length > 0}
+          <ol class="relative ml-3 border-l border-zinc-200 pl-6 dark:border-zinc-800">
+            {#each recentActivity as a}
+              <li class="mb-6">
+                <span class="absolute -left-2.5 mt-1.5 h-2.5 w-2.5 rounded-full bg-[color:var(--brand)]"></span>
+                <div class="text-sm text-zinc-800 dark:text-zinc-200">{a.text}</div>
+                <div class="text-xs text-zinc-500 dark:text-zinc-400">{a.at}</div>
+              </li>
+            {/each}
+          </ol>
+        {:else}
+          <div class="text-sm text-zinc-600 dark:text-zinc-400">No recent activity.</div>
+        {/if}
       </div>
 
     {:else}
