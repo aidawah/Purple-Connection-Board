@@ -3,7 +3,8 @@
   import { browser } from '$app/environment';
   import { goto } from '$app/navigation';
   import { auth } from '$lib/firebase';
-  
+  import { onMount } from 'svelte';
+
   const handleLogout = async () => {
     try {
       await auth.signOut();
@@ -12,8 +13,6 @@
       console.error('Logout error:', error);
     }
   };
-  import { onMount } from 'svelte';
-  import ProfileModal from './ProfileModal.svelte';
 
   const items = [
     { href: '/', label: 'Home' },
@@ -22,13 +21,12 @@
   ];
 
   let showUserMenu = false;
-  let showProfileModal = false;
 
   let userData = { name: '', email: '', bio: '', theme: 'light', photoURL: '' };
 
   onMount(() => {
     if (!browser) return;
-    
+
     // Get user data from Firebase auth
     const unsubscribe = auth.onAuthStateChanged(user => {
       if (user) {
@@ -47,18 +45,9 @@
     // Load theme from local storage (separate from user profile)
     const savedTheme = localStorage.getItem('themePreference') || 'light';
     document.documentElement.classList.toggle('dark', savedTheme === 'dark');
-    
+
     return () => unsubscribe();
   });
-
-  function handleProfileSave(event: CustomEvent) {
-    // Only save theme preference locally, not user profile data
-    const newTheme = event.detail.theme;
-    if (browser) {
-      localStorage.setItem('themePreference', newTheme);
-      document.documentElement.classList.toggle('dark', newTheme === 'dark');
-    }
-  }
 
   function initials(name: string) {
     if (!name?.trim() || !userData.email) return '';
@@ -78,54 +67,52 @@
     };
   }
 
-// --- Theme state (light | dark | system) moved into profile dropdown ---
-let themeMode: 'light' | 'dark' | 'system' = 'light';
-let systemMql: MediaQueryList | null = null;
+  // --- Theme state (light | dark | system) moved into profile dropdown ---
+  let themeMode: 'light' | 'dark' | 'system' = 'light';
+  let systemMql: MediaQueryList | null = null;
 
-function applyTheme(mode: 'light' | 'dark' | 'system') {
-  if (typeof document === 'undefined') return;
-  const root = document.documentElement;
+  function applyTheme(mode: 'light' | 'dark' | 'system') {
+    if (typeof document === 'undefined') return;
+    const root = document.documentElement;
 
-  // Resolve system preference
-  const prefersDark =
-    typeof window !== 'undefined' &&
-    window.matchMedia &&
-    window.matchMedia('(prefers-color-scheme: dark)').matches;
+    // Resolve system preference
+    const prefersDark =
+      typeof window !== 'undefined' &&
+      window.matchMedia &&
+      window.matchMedia('(prefers-color-scheme: dark)').matches;
 
-  const isDark = mode === 'dark' || (mode === 'system' && prefersDark);
-  root.classList.toggle('dark', isDark);
-}
-
-function setThemeMode(mode: 'light' | 'dark' | 'system') {
-  themeMode = mode;
-  // persist both places to keep your app consistent
-  try {
-    localStorage.setItem('themeMode', mode);
-    userData = { ...userData, theme: mode === 'dark' ? 'dark' : 'light' };
-    localStorage.setItem('userProfile', JSON.stringify(userData));
-  } catch {}
-  applyTheme(mode);
-}
-
-onMount(() => {
-  if (!browser) return;
-
-  // load saved mode (prefer themeMode, fall back to userProfile.theme)
-  const savedMode =
-    (localStorage.getItem('themeMode') as 'light' | 'dark' | 'system' | null) ||
-    (userData.theme === 'dark' ? 'dark' : 'light');
-  themeMode = savedMode || 'light';
-  applyTheme(themeMode);
-
-  // listen to system theme changes if user chooses "system"
-  if (window.matchMedia) {
-    systemMql = window.matchMedia('(prefers-color-scheme: dark)');
-    const handle = () => themeMode === 'system' && applyTheme('system');
-    systemMql.addEventListener?.('change', handle);
+    const isDark = mode === 'dark' || (mode === 'system' && prefersDark);
+    root.classList.toggle('dark', isDark);
   }
-});
 
+  function setThemeMode(mode: 'light' | 'dark' | 'system') {
+    themeMode = mode;
+    // persist both places to keep your app consistent
+    try {
+      localStorage.setItem('themeMode', mode);
+      userData = { ...userData, theme: mode === 'dark' ? 'dark' : 'light' };
+      localStorage.setItem('userProfile', JSON.stringify(userData));
+    } catch {}
+    applyTheme(mode);
+  }
 
+  onMount(() => {
+    if (!browser) return;
+
+    // load saved mode (prefer themeMode, fall back to userProfile.theme)
+    const savedMode =
+      (localStorage.getItem('themeMode') as 'light' | 'dark' | 'system' | null) ||
+      (userData.theme === 'dark' ? 'dark' : 'light');
+    themeMode = savedMode || 'light';
+    applyTheme(themeMode);
+
+    // listen to system theme changes if user chooses "system"
+    if (window.matchMedia) {
+      systemMql = window.matchMedia('(prefers-color-scheme: dark)');
+      const handle = () => themeMode === 'system' && applyTheme('system');
+      systemMql.addEventListener?.('change', handle);
+    }
+  });
 </script>
 
 <!-- Desktop navbar -->
@@ -189,59 +176,61 @@ onMount(() => {
             <span class="block text-sm text-gray-900 dark:text-white">{userData?.name}</span>
             <span class="block text-sm text-gray-500 truncate dark:text-gray-400">{userData?.email}</span>
           </div>
-<!-- Theme toggle inside profile dropdown -->
-<div class="px-3 pt-2 pb-3">
-  <div class="text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-2">Theme</div>
-  <div role="group" aria-label="Theme" class="grid grid-cols-3 gap-2">
-    <button
-      class={`h-9 rounded-lg flex items-center justify-center gap-2 border transition
-        ${themeMode === 'light'
-          ? 'bg-teal-600 text-white border-teal-600'
-          : 'bg-white text-zinc-700 border-zinc-300 hover:border-teal-400 hover:text-teal-700 dark:bg-zinc-800 dark:text-zinc-100 dark:border-zinc-700 dark:hover:border-teal-500'}`}
-      aria-pressed={themeMode === 'light'}
-      on:click={() => setThemeMode('light')}
-    >
-      <!-- sun -->
-      <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="currentColor"><path d="M6.76 4.84l-1.8-1.79-1.41 1.41 1.79 1.8 1.42-1.42zm10.48 0l1.79-1.8 1.41 1.41-1.8 1.79-1.4-1.4zM12 4h0V1h0v3zm0 19h0v-3h0v3zM4 12H1v0h3zm22 0h-3v0h3zM6.76 19.16l-1.42 1.42-1.79-1.8 1.41-1.41 1.8 1.79zm13.69-.38l-1.41 1.41-1.79-1.8 1.41-1.41 1.79 1.8zM12 8a4 4 0 100 8 4 4 0 000-8z"/></svg>
 
-    </button>
+          <!-- Theme toggle inside profile dropdown -->
+          <div class="px-3 pt-2 pb-3">
+            <div class="text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-2">Theme</div>
+            <div role="group" aria-label="Theme" class="grid grid-cols-3 gap-2">
+              <button
+                class={`h-9 rounded-lg flex items-center justify-center gap-2 border transition
+                  ${themeMode === 'light'
+                    ? 'bg-teal-600 text-white border-teal-600'
+                    : 'bg-white text-zinc-700 border-zinc-300 hover:border-teal-400 hover:text-teal-700 dark:bg-zinc-800 dark:text-zinc-100 dark:border-zinc-700 dark:hover:border-teal-500'}`}
+                aria-pressed={themeMode === 'light'}
+                on:click={() => setThemeMode('light')}
+              >
+                <!-- sun -->
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="currentColor"><path d="M6.76 4.84l-1.8-1.79-1.41 1.41 1.79 1.8 1.42-1.42zm10.48 0l1.79-1.8 1.41 1.41-1.8 1.79-1.4-1.4zM12 4h0V1h0v3zm0 19h0v-3h0v3zM4 12H1v0h3zm22 0h-3v0h3zM6.76 19.16l-1.42 1.42-1.79-1.8 1.41-1.41 1.8 1.79zm13.69-.38l-1.41 1.41-1.79-1.8 1.41-1.41 1.79 1.8zM12 8a4 4 0 100 8 4 4 0 000-8z"/></svg>
+              </button>
 
-    <button
-      class={`h-9 rounded-lg flex items-center justify-center gap-2 border transition
-        ${themeMode === 'dark'
-          ? 'bg-teal-600 text-white border-teal-600'
-          : 'bg-white text-zinc-700 border-zinc-300 hover:border-teal-400 hover:text-teal-700 dark:bg-zinc-800 dark:text-zinc-100 dark:border-zinc-700 dark:hover:border-teal-500'}`}
-      aria-pressed={themeMode === 'dark'}
-      on:click={() => setThemeMode('dark')}
-    >
-      <!-- moon -->
-      <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="currentColor"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>
-    </button>
+              <button
+                class={`h-9 rounded-lg flex items-center justify-center gap-2 border transition
+                  ${themeMode === 'dark'
+                    ? 'bg-teal-600 text-white border-teal-600'
+                    : 'bg-white text-zinc-700 border-zinc-300 hover:border-teal-400 hover:text-teal-700 dark:bg-zinc-800 dark:text-zinc-100 dark:border-zinc-700 dark:hover:border-teal-500'}`}
+                aria-pressed={themeMode === 'dark'}
+                on:click={() => setThemeMode('dark')}
+              >
+                <!-- moon -->
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="currentColor"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>
+              </button>
 
-    <button
-      class={`h-9 rounded-lg flex items-center justify-center gap-2 border transition
-        ${themeMode === 'system'
-          ? 'bg-teal-600 text-white border-teal-600'
-          : 'bg-white text-zinc-700 border-zinc-300 hover:border-teal-400 hover:text-teal-700 dark:bg-zinc-800 dark:text-zinc-100 dark:border-zinc-700 dark:hover:border-teal-500'}`}
-      aria-pressed={themeMode === 'system'}
-      on:click={() => setThemeMode('system')}
-    >
-      <!-- desktop -->
-      <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="currentColor"><path d="M20 3H4a2 2 0 00-2 2v10a2 2 0 002 2h6v2H8v2h8v-2h-2v-2h6a2 2 0 002-2V5a2 2 0 00-2-2zm0 12H4V5h16v10z"/></svg>
-    </button>
-  </div>
-</div>
-
+              <button
+                class={`h-9 rounded-lg flex items-center justify-center gap-2 border transition
+                  ${themeMode === 'system'
+                    ? 'bg-teal-600 text-white border-teal-600'
+                    : 'bg-white text-zinc-700 border-zinc-300 hover:border-teal-400 hover:text-teal-700 dark:bg-zinc-800 dark:text-zinc-100 dark:border-zinc-700 dark:hover:border-teal-500'}`}
+                aria-pressed={themeMode === 'system'}
+                on:click={() => setThemeMode('system')}
+              >
+                <!-- desktop -->
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="currentColor"><path d="M20 3H4a2 2 0 00-2 2v10a2 2 0 002 2h6v2H8v2h8v-2h-2v-2h6a2 2 0 002-2V5a2 2 0 00-2-2zm0 12H4V5h16v10z"/></svg>
+              </button>
+            </div>
+          </div>
 
           <ul class="py-2">
             <li>
-              <button
-                class="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-teal-50 hover:text-teal-700 
+              <!-- Profile route -->
+              <a
+                href="/profile"
+                sveltekit:prefetch
+                on:click={() => (showUserMenu = false)}
+                class="block px-4 py-2 text-sm text-gray-700 hover:bg-teal-50 hover:text-teal-700 
                        dark:text-gray-200 dark:hover:bg-teal-600/30 dark:hover:text-white"
-                on:click={() => { showProfileModal = true; showUserMenu = false; }}
               >
                 Profile
-              </button>
+              </a>
             </li>
             <li>
               <a
@@ -281,26 +270,25 @@ onMount(() => {
   <div class="mx-auto max-w-screen-sm">
     <ul class="grid h-16 grid-cols-4 items-stretch text-[13px] font-medium text-zinc-200">
       {#each items as it}
-<li class="flex">
-  <a
-    href={it.href}
-    class={`mx-1 my-2 flex w-full flex-col items-center justify-center gap-1
-            rounded-xl px-3 text-center
-            transition-colors duration-150
-            ${$page.url.pathname === it.href
-              ? 'bg-teal-700/25 text-teal-300'
-              : 'text-zinc-300 hover:text-teal-300 hover:bg-neutral-800/70'}`}
-  >
-    <span class="leading-tight text-center">{it.label}</span>
-  </a>
-</li>
-
+        <li class="flex">
+          <a
+            href={it.href}
+            class={`mx-1 my-2 flex w-full flex-col items-center justify-center gap-1
+                    rounded-xl px-3 text-center
+                    transition-colors duration-150
+                    ${$page.url.pathname === it.href
+                      ? 'bg-teal-700/25 text-teal-300'
+                      : 'text-zinc-300 hover:text-teal-300 hover:bg-neutral-800/70'}`}
+          >
+            <span class="leading-tight text-center">{it.label}</span>
+          </a>
+        </li>
       {/each}
 
       <!-- Profile/Sign In button -->
       <li class="flex">
         <button
-          on:click={() => userData.email ? showProfileModal = true : goto('/signinPage')}
+          on:click={() => userData.email ? goto('/profile') : goto('/signinPage')}
           class="mx-1 my-2 flex w-full flex-col items-center justify-center gap-1
                  rounded-xl px-3
                  text-zinc-300 hover:text-teal-300 hover:bg-neutral-800/70
@@ -314,12 +302,3 @@ onMount(() => {
     </ul>
   </div>
 </nav>
-
-
-{#if showProfileModal}
-  <ProfileModal
-    userData={userData}
-    on:save={handleProfileSave}
-    on:close={() => (showProfileModal = false)}
-  />
-{/if}
