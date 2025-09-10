@@ -24,6 +24,7 @@ import {
   signInWithPopup,
   signOut as firebaseSignOut,
   onAuthStateChanged,
+  updateProfile,
   type User
 } from 'firebase/auth';
 
@@ -31,13 +32,13 @@ import {
 // Your web app's Firebase configuration
 // For Firebase JS SDK v7.20.0 and later, measurementId is optional
 const firebaseConfig = {
-  apiKey: "AIzaSyAJKLordW0gDiM2QsBypZnT1ffwhzvJpjE",
-  authDomain: "purple-connection-board.firebaseapp.com",
-  projectId: "purple-connection-board",
-  storageBucket: "purple-connection-board.firebasestorage.app",
-  messagingSenderId: "926105406557",
-  appId: "1:926105406557:web:df201cee495fd4591651b4",
-  measurementId: "G-Z6BY1B8RE6"
+  apiKey: 'AIzaSyAvPhsd2JLcqgOOnC9VlJeTmfiM-wMmmeA',
+  authDomain: 'game-39c6f.firebaseapp.com',
+  projectId: 'game-39c6f',
+  storageBucket: 'game-39c6f.firebasestorage.app',
+  messagingSenderId: '1041504633574',
+  appId: '1:1041504633574:web:e40c1095b761a8740e3127',
+  measurementId: 'G-VNMHDW1MRG'
 };
 
 // Initialize Firebase
@@ -63,8 +64,36 @@ export const auth = getAuth(app);
 const googleProvider = new GoogleAuthProvider();
 const appleProvider = new OAuthProvider('apple.com');
 
-export function signInWithGoogle() {
-  return signInWithPopup(auth, googleProvider);
+export async function signInWithGoogle() {
+  const provider = new GoogleAuthProvider();
+  provider.addScope('openid');
+  provider.addScope('profile');
+  provider.addScope('email');
+
+  const result = await signInWithPopup(auth, provider);
+
+  // Refresh avatar from Google userinfo
+  try {
+    const cred = GoogleAuthProvider.credentialFromResult(result);
+    const accessToken = cred?.accessToken;
+    const u = auth.currentUser;
+    if (accessToken && u) {
+      const resp = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+        headers: { Authorization: `Bearer ${accessToken}` }
+      });
+      if (resp.ok) {
+        const data = await resp.json();
+        const picture: string | undefined = data?.picture;
+        if (picture) {
+          await updateProfile(u, { photoURL: normalizeGoogleAvatar(picture, 128) });
+        }
+      }
+    }
+  } catch (e) {
+    console.warn('Google avatar refresh failed:', e);
+  }
+
+  return result;
 }
 export function signInWithApple() {
   return signInWithPopup(auth, appleProvider);
@@ -72,6 +101,21 @@ export function signInWithApple() {
 export function signOut() {
   return firebaseSignOut(auth);
 }
+export function normalizeGoogleAvatar(rawUrl: string, size = 128) {
+  try {
+    const u = new URL(rawUrl);
+    if (u.hostname.endsWith('googleusercontent.com')) {
+      u.searchParams.set('sz', String(size));
+      u.pathname = u.pathname.replace(/=s\d+(-c)?$/i, '');
+      u.hash = '';
+      return u.toString();
+    }
+    return rawUrl;
+  } catch {
+    return rawUrl;
+  }
+}
+
 export function onUserChanged(cb: (u: User | null) => void) {
   return onAuthStateChanged(auth, cb);
 }

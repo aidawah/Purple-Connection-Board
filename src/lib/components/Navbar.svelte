@@ -24,7 +24,7 @@
   let showUserMenu = false;
   let showProfileModal = false;
 
-  let userData = { name: '', email: '', bio: '', theme: 'light' };
+  let userData = { name: '', email: '', bio: '', theme: 'light', photoURL: '' };
 
   onMount(() => {
     if (!browser) return;
@@ -36,10 +36,11 @@
           name: user.displayName || '',
           email: user.email || '',
           bio: '',
-          theme: userData.theme
+          theme: userData.theme,
+          photoURL: user.photoURL || ''
         };
       } else {
-        userData = { name: '', email: '', bio: '', theme: 'light' };
+        userData = { name: '', email: '', bio: '', theme: 'light', photoURL: '' };
       }
     });
 
@@ -169,9 +170,13 @@ onMount(() => {
         on:click={() => userData.email ? (showUserMenu = !showUserMenu) : goto('/signinPage')}
       >
         <span class="sr-only">Open user menu</span>
-        <span class="w-8 h-8 rounded-full grid place-items-center font-semibold select-none">
-          {initials(userData?.name)}
-        </span>
+        {#if userData.photoURL}
+          <img src={userData.photoURL} alt="Profile" class="w-8 h-8 rounded-full object-cover" />
+        {:else}
+          <span class="w-8 h-8 rounded-full grid place-items-center font-semibold select-none">
+            {initials(userData?.name)}
+          </span>
+        {/if}
       </button>
 
       {#if showUserMenu && userData.email}

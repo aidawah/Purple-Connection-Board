@@ -18,12 +18,13 @@
 		email: string;
 		bio: string;
 		theme: string;
-		photoURL?: string;
+		photoURL: string;
 	} = {
 		name: '',
 		email: '',
 		bio: '',
-		theme: 'light'
+		theme: 'light',
+		photoURL: ''
 	};
 
 	let name = userData.name;
@@ -103,12 +104,14 @@
 			<div class="space-y-4">
 				<div class="flex items-center gap-4 mb-6">
 					{#if userData.photoURL && !imageError}
-						<img 
-							src={userData.photoURL} 
-							alt="Profile" 
-							class="w-16 h-16 rounded-full border-2 border-white shadow-sm"
-							on:error={() => imageError = true}
-						/>
+{#key userData.photoURL}
+<img 
+  src={userData.photoURL} 
+  alt="Profile" 
+  class="w-16 h-16 rounded-full border-2 border-white shadow-sm"
+  on:error={() => imageError = true}
+/>
+{/key}
 					{:else}
 						<div class="w-16 h-16 rounded-full bg-gradient-to-br from-blue-500 to-purple-500 flex items-center justify-center text-2xl font-bold text-white">
 							{userData.name ? userData.name.split(' ').map(n => n[0]).join('') : ''}
