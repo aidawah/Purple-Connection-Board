@@ -2,38 +2,32 @@
   import { onMount } from "svelte";
   import { createEventDispatcher } from "svelte";
 
-  const PCARD_VERSION = "PuzzleCard v2025-09-09b";
+  const PCARD_VERSION = "PuzzleCard v2025-09-11c";
   onMount(() => console.log("[PuzzleCard] mounted:", PCARD_VERSION));
-
 
   /** Front word (e.g., "Apple") */
   export let text: string;
-
   /** Unique word id (used in the toggle event) */
   export let wordId: string;
-
   /** While the player has this tile selected (pre-submission) */
   export let selected = false;
-
   /** When the 4-word group is solved, lock+flip this tile */
   export let locked = false;
-
   /** Group title shown on the back (e.g., "Fruits") */
   export let label = "";
 
   const dispatch = createEventDispatcher();
   function toggle() { if (!locked) dispatch("toggle", { wordId }); }
 
-  // Teal glow when the tile is selected
+  // EXACTLY the original teal-glow classes you had before
   $: selectedGlow = selected
     ? "ring-2 ring-[rgba(20,184,166,.65)] shadow-[0_10px_30px_rgba(20,184,166,.18)] border-[rgba(20,184,166,.65)]"
     : "";
 
-  // Debug: confirm locked prop changes reach this component
+  // Debug
   $: console.log("[PuzzleCard] wordId=", wordId, "locked=", locked);
 </script>
 
-<!-- OUTER: shell with perspective (no rotation here) -->
 <div
   data-locked={locked ? "true" : "false"}
   role="button"
@@ -42,29 +36,27 @@
   aria-label={locked ? `${label} (solved)` : `Word ${text}`}
   on:click={toggle}
   on:keydown={(e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), toggle())}
-  class={`relative select-none cursor-pointer rounded-2xl border
-          bg-[#0f1830] border-[#2a4067] text-[#eaf2ff]
-          shadow-[0_8px_24px_rgba(0,0,0,.28)] overflow-hidden
+
+  class={`brand-scope relative select-none cursor-pointer rounded-2xl border overflow-hidden
           transition-[transform,box-shadow,border-color] duration-200
-          hover:-translate-y-0.5 hover:shadow-[0_14px_36px_rgba(0,0,0,.35)]
-          focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(20,184,166,.65)]
+          hover:-translate-y-0.5
+          focus-visible:outline-none focus-visible:brand-ring
+          brand-card brand-border
           ${selectedGlow}
-          perspective-1200
-        `}
+          perspective-1200`}
   style="min-height:88px;"
 >
-  <!-- INNER: the flipper (this element rotates) -->
+  <!-- Flipper -->
   <div
     class="absolute inset-0 rounded-2xl transition-transform duration-500 ease-[cubic-bezier(.2,.6,.2,1)]
            transform-gpu preserve-3d will-change-transform"
     style="
-      /* drive the flip via inline style to avoid any purge/utility miss */
       transform: rotateY({locked ? 180 : 0}deg);
       transform-style: preserve-3d;
       -webkit-transform-style: preserve-3d;
     "
   >
-    <!-- FRONT (navy) -->
+    <!-- FRONT -->
     <div
       class="absolute inset-0 grid place-items-center rounded-2xl"
       style="
@@ -78,10 +70,9 @@
       </span>
     </div>
 
-    <!-- BACK (teal with group title) -->
+    <!-- BACK (solid teal/brand) -->
     <div
-      class="absolute inset-0 grid place-items-center rounded-2xl
-             border border-[#0ea5a5] bg-[#14b8a6] text-[#053b3a]"
+      class="absolute inset-0 grid place-items-center rounded-2xl brand-back"
       style="
         backface-visibility: hidden;
         -webkit-backface-visibility: hidden;
@@ -92,6 +83,58 @@
     </div>
   </div>
 </div>
+
+<style>
+  /* Use either --brand (Browse) or --color-brand (app.css) */
+  .brand-scope { --pc-brand: var(--brand, var(--color-brand, #14b8a6)); }
+
+  /* CARD SURFACE (exact colors you asked for) */
+  /* Light = #FFFFFF */
+  .brand-card {
+    background: #ffffff;
+    color: #0f172a;
+
+    /* ❤️ IMPORTANT: make Tailwind rings and our shadow COMPOSE instead of overwrite */
+    --tw-shadow: 0 8px 24px rgba(0,0,0,.10);
+    box-shadow:
+      var(--tw-ring-offset-shadow, 0 0 #0000),
+      var(--tw-ring-shadow, 0 0 #0000),
+      var(--tw-shadow);
+  }
+  /* Dark = #18181B */
+  :global(.dark) .brand-card {
+    background: #18181B;
+    color: #eaf2ff;
+
+    --tw-shadow: 0 8px 24px rgba(0,0,0,.28);
+    box-shadow:
+      var(--tw-ring-offset-shadow, 0 0 #0000),
+      var(--tw-ring-shadow, 0 0 #0000),
+      var(--tw-shadow);
+  }
+
+  /* BORDER (neutral by default; teal only when selected via your selectedGlow classes) */
+  .brand-border { border-color: #e5e7eb; }            /* light: zinc-200 */
+  :global(.dark) .brand-border { border-color: #27272a; } /* dark: zinc-800 */
+
+  /* Keyboard focus (kept brandy) */
+  .brand-ring {
+    box-shadow:
+      0 0 0 2px color-mix(in oklab, var(--pc-brand) 60%, transparent),
+      var(--tw-shadow, 0 0 #0000);
+  }
+
+  /* Back face (solid teal/brand) */
+  .brand-back {
+    background: var(--pc-brand);
+    color: color-mix(in oklab, black 82%, var(--pc-brand) 18%);
+    border: 1px solid color-mix(in oklab, black 20%, var(--pc-brand) 80%);
+  }
+
+  /* 3D smoothing */
+  .preserve-3d { transform-style: preserve-3d; -webkit-transform-style: preserve-3d; }
+</style>
+
 
 
 
