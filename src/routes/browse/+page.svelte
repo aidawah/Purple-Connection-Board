@@ -1,26 +1,38 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { browser } from '$app/environment';
-  import { puzzles as mockPuzzles, type Puzzle } from '$lib/data/puzzles';
-  import PuzzleCard from "$lib/components/PuzzleCard.svelte";
   import CustomSelect from '$lib/components/DropdownSelect.svelte';
+  import { fetchBrowsePuzzles } from '$lib/firebase';
 
   const BRAND = '#14b8a6';
-  const USE_FIREBASE = false;
 
-  let allPuzzles: Puzzle[] = mockPuzzles;
+  type UIPuzzle = {
+    id: string;
+    title: string;
+    description: string;
+    category: string;
+    difficulty: 'Easy' | 'Medium' | 'Hard' | string;
+    solveCount: number;
+    createdBy: string;
+    imageUrl: string;
+    isPinned: boolean;
+    createdAt: string;
+  };
 
+  let allPuzzles: UIPuzzle[] = [];
   let searchTerm = '';
   let selectedCategory = 'All';
   let selectedDifficulty = 'All';
 
-  $: categories = ['All', ...Array.from(new Set(allPuzzles.map(p => p.category)))];
+  let debug: { loaded: boolean; error?: string; projectId?: string } = { loaded: false };
+
+  $: categories = ['All', ...Array.from(new Set(allPuzzles.map(p => p.category ?? 'General')))];
   const difficulties = ['All', 'Easy', 'Medium', 'Hard'];
 
   $: filteredPuzzles = allPuzzles.filter((puzzle) => {
     const q = searchTerm.trim().toLowerCase();
     const matchesSearch = !q || puzzle.title.toLowerCase().includes(q) || puzzle.description.toLowerCase().includes(q);
-    const matchesCategory = selectedCategory === 'All' || puzzle.category === selectedCategory;
+    const matchesCategory = selectedCategory === 'All' || (puzzle.category ?? 'General') === selectedCategory;
     const matchesDifficulty = selectedDifficulty === 'All' || puzzle.difficulty === selectedDifficulty;
     return matchesSearch && matchesCategory && matchesDifficulty;
   });
@@ -35,37 +47,20 @@
   }
 
   async function loadFromFirebase() {
-    if (!browser || !USE_FIREBASE) return;
-    const fb = await import('$lib/firebase');
-    const ffs = await import('firebase/firestore');
-    const db = (fb as any).db || (fb as any).getFirestore?.((fb as any).app);
-    if (!db) return;
-
+    if (!browser) return;
     try {
-      const q = ffs.query(
-        ffs.collection(db, 'puzzles'),
-        ffs.orderBy('isPinned', 'desc'),
-        ffs.orderBy('createdAt', 'desc'),
-        ffs.limit(60)
-      );
-      const snap = await ffs.getDocs(q);
-      allPuzzles = snap.docs.map((d) => {
-        const x = d.data() as any;
-        return {
-          id: d.id,
-          title: x.title ?? 'Untitled',
-          description: x.description ?? '',
-          category: x.category ?? 'General',
-          difficulty: (x.difficulty ?? 'Medium'),
-          solveCount: x.solveCount ?? 0,
-          createdBy: x.createdBy ?? 'Unknown',
-          imageUrl: x.imageUrl ?? '',
-          isPinned: !!x.isPinned,
-          createdAt: x.createdAt?.toDate?.()?.toISOString?.() ?? new Date().toISOString()
-        } as Puzzle;
-      });
-    } catch (e) {
+      // Tiny dynamic import so we can log which Firebase project we’re hitting
+      const fb = await import('$lib/firebase');
+      // @ts-ignore
+      debug.projectId = (fb as any)?.app?.options?.projectId;
+      const rows = await fetchBrowsePuzzles(60);
+      allPuzzles = rows as UIPuzzle[];
+      console.log('Firestore projectId:', debug.projectId, 'puzzle ids:', allPuzzles.map(p => p.id));
+      debug.loaded = true;
+    } catch (e: any) {
       console.error('Failed to load puzzles:', e);
+      debug.error = e?.message ?? String(e);
+      debug.loaded = true;
     }
   }
 
@@ -80,11 +75,19 @@
 </svelte:head>
 
 <main class="mx-auto max-w-7xl px-4 pt-10 md:pt-12">
-  <!-- Filters card (now with pretty custom selects) -->
+  <!-- DEV helper: shows which Firebase project and how many docs were loaded -->
+  <div class="mb-4 text-xs text-zinc-500 dark:text-zinc-400">
+    {#if debug.loaded}
+      <span>project: <code>{debug.projectId ?? 'unknown'}</code></span>
+      <span class="ml-3">docs: <code>{allPuzzles.length}</code></span>
+      {#if debug.error}<span class="ml-3 text-red-500">error: {debug.error}</span>{/if}
+    {/if}
+  </div>
+
+  <!-- Filters -->
   <div class="mb-8 rounded-xl border border-zinc-200 bg-white p-6 shadow-sm focus-within:ring-1 focus-within:ring-[color:var(--brand)]
               dark:border-zinc-800 dark:bg-zinc-900">
     <div class="grid grid-cols-1 gap-4 md:grid-cols-4">
-      <!-- Search -->
       <div class="md:col-span-2">
         <label for="search" class="mb-2 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
           Search Puzzles
@@ -100,14 +103,10 @@
         />
       </div>
 
-      <!-- Category (custom rounded select) -->
       <CustomSelect label="Category" options={categories} bind:value={selectedCategory} />
-
-      <!-- Difficulty (custom rounded select) -->
       <CustomSelect label="Difficulty" options={difficulties} bind:value={selectedDifficulty} />
     </div>
 
-    <!-- Results count -->
     <div class="mt-4 border-t border-zinc-200 pt-4 dark:border-zinc-800">
       <p class="text-sm text-zinc-600 dark:text-zinc-400">
         Showing {filteredPuzzles.length} of {allPuzzles.length} puzzles
@@ -115,7 +114,7 @@
     </div>
   </div>
 
-  <!-- Grid (unchanged) -->
+  <!-- Grid -->
   <div class="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
     {#each filteredPuzzles as puzzle}
       <div class="overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-sm transition hover:shadow-md dark:border-zinc-800 dark:bg-zinc-900">
@@ -127,9 +126,9 @@
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"
                  class="absolute right-2 top-2 h-5 w-5 rotate-[-20deg] text-[color:var(--brand)] drop-shadow"
                  aria-label="Pinned">
-              <circle cx="12" cy="7" r="3"/>
+              <circle cx="12" cy="7" r="3" />
               <rect x="11" y="9.5" width="2" height="7.5" rx="1" />
-              <path d="M12 17l-2 5h4l-2-5z"/>
+              <path d="M12 17l-2 5h4l-2-5z" />
             </svg>
           {/if}
         </div>
@@ -146,7 +145,7 @@
           <div class="mb-4 flex items-center justify-between">
             <div class="flex items-center gap-2">
               <span class="rounded px-2 py-1 text-xs font-medium text-zinc-700 ring-1 ring-inset ring-[color:var(--brand)]/30 dark:text-zinc-300">
-                {puzzle.category}
+                {puzzle.category ?? 'General'}
               </span>
               <span class={`rounded px-2 py-1 text-xs font-medium ${getDifficultyColor(puzzle.difficulty)}`}>
                 {puzzle.difficulty}
@@ -159,8 +158,13 @@
               <div>{puzzle.solveCount} solves</div>
               <div>by {puzzle.createdBy}</div>
             </div>
-            <a href="/gameboard/{puzzle.id}" sveltekit:prefetch
-               class="rounded-md bg-[color:var(--brand)] px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:brightness-95 focus:outline-none focus:ring-2 focus:ring-[color:var(--brand)]/40">
+
+            <a
+              href={`/gameboard/${puzzle.id}`}
+              data-sveltekit-preload-data="hover"
+              data-sveltekit-preload-code="hover"
+              class="rounded-md bg-[color:var(--brand)] px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:brightness-95 focus:outline-none focus:ring-2 focus:ring-[color:var(--brand)]/40"
+            >
               Play Puzzle
             </a>
           </div>
@@ -169,15 +173,11 @@
     {/each}
   </div>
 
-  {#if filteredPuzzles.length === 0}
+  {#if debug.loaded && allPuzzles.length === 0}
     <div class="py-12 text-center">
       <div class="mb-4 text-6xl">🧩</div>
       <h3 class="mb-2 text-lg font-medium text-zinc-900 dark:text-zinc-100">No puzzles found</h3>
-      <p class="mb-4 text-zinc-600 dark:text-zinc-400">Try adjusting your search terms or filters to find more puzzles.</p>
-      <button on:click={() => { searchTerm = ''; selectedCategory = 'All'; selectedDifficulty = 'All'; }}
-              class="rounded-md border border-[color:var(--brand)]/30 px-4 py-2 text-sm font-medium text-[color:var(--brand)] transition hover:bg-[color:var(--brand)]/10 focus:outline-none focus:ring-2 focus:ring-[color:var(--brand)]/40">
-        Clear Filters
-      </button>
+      <p class="mb-4 text-zinc-600 dark:text-zinc-400">If you expected 2 puzzles, check projectId above.</p>
     </div>
   {/if}
 </main>

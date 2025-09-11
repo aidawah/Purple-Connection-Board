@@ -12,7 +12,7 @@ import {
   getDoc,
   setDoc,
   deleteDoc,
-  serverTimestamp
+  serverTimestamp,
 } from "firebase/firestore";
 import {
   getAuth,
@@ -22,27 +22,37 @@ import {
   signOut as firebaseSignOut,
   onAuthStateChanged,
   updateProfile,
-  type User
+  type User,
 } from "firebase/auth";
 
 import { Converters } from "$lib/converters";
 import type { PuzzleDoc, UserDoc } from "$lib/types";
 
+/* ------------------------------------------------------------------ */
+/* Firebase boot                                                       */
+/* ------------------------------------------------------------------ */
+
 const firebaseConfig = {
-  apiKey: "AIzaSyAvPhsd2JLcqgOOnC9VlJeTmfiM-wMmmeA",
-  authDomain: "game-39c6f.firebaseapp.com",
-  projectId: "game-39c6f",
-  storageBucket: "game-39c6f.firebasestorage.app",
-  messagingSenderId: "1041504633574",
-  appId: "1:1041504633574:web:e40c1095b761a8740e3127",
-  measurementId: "G-VNMHDW1MRG"
+  apiKey: "AIzaSyAJKLordW0gDiM2QsBypZnT1ffwhzvJpjE",
+  authDomain: "purple-connection-board.firebaseapp.com",
+  projectId: "purple-connection-board",
+  storageBucket: "purple-connection-board.firebasestorage.app",
+  messagingSenderId: "926105406557",
+  appId: "1:926105406557:web:df201cee495fd4591651b4",
+  measurementId: "G-Z6BY1B8RE6"
 };
 
 if (!firebaseConfig.apiKey) throw new Error("Missing PUBLIC_FIREBASE_API_KEY");
 
-const app = initializeApp(firebaseConfig);
+export const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app);
 export const auth = getAuth(app);
+export const PROJECT_ID = firebaseConfig.projectId;
+
+
+/* ------------------------------------------------------------------ */
+/* Auth helpers                                                        */
+/* ------------------------------------------------------------------ */
 
 const googleProvider = new GoogleAuthProvider();
 const appleProvider = new OAuthProvider("apple.com");
@@ -61,7 +71,7 @@ export async function signInWithGoogle() {
     const u = auth.currentUser;
     if (accessToken && u) {
       const resp = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
-        headers: { Authorization: `Bearer ${accessToken}` }
+        headers: { Authorization: `Bearer ${accessToken}` },
       });
       if (resp.ok) {
         const data = await resp.json();
@@ -100,10 +110,14 @@ export function normalizeGoogleAvatar(rawUrl: string, size = 128) {
   }
 }
 
+/* ------------------------------------------------------------------ */
+/* Typed refs/collections                                              */
+/* ------------------------------------------------------------------ */
+
 export const col = {
   puzzles: () => collection(db, "puzzles").withConverter(Converters.puzzles),
   users: () => collection(db, "users").withConverter(Converters.users),
-  activity: () => collection(db, "activity").withConverter(Converters.activity)
+  activity: () => collection(db, "activity").withConverter(Converters.activity),
 };
 export const ref = {
   puzzle: (id: string) => doc(db, "puzzles", id).withConverter(Converters.puzzles),
@@ -113,12 +127,21 @@ export const ref = {
   reaction: (puzzleId: string, uid: string) =>
     doc(db, `puzzles/${puzzleId}/reactions/${uid}`).withConverter(Converters.reactions),
   play: (puzzleId: string, uid: string) =>
-    doc(db, `puzzles/${puzzleId}/plays/${uid}`).withConverter(Converters.plays)
+    doc(db, `puzzles/${puzzleId}/plays/${uid}`).withConverter(Converters.plays),
 };
 
+/* ------------------------------------------------------------------ */
+/* App-level query helpers                                             */
+/* ------------------------------------------------------------------ */
+
 export async function fetchPublicPuzzles(max = 20) {
-  const q = query(col.puzzles(), where("visibility", "==", "public"), orderBy("publishedAt", "desc"), limit(max));
-  const snap = await getDocs(q);
+  const qRef = query(
+    col.puzzles(),
+    where("visibility", "==", "public"),
+    orderBy("publishedAt", "desc"),
+    limit(max),
+  );
+  const snap = await getDocs(qRef);
   return snap.docs.map((d) => ({ id: d.id, ...d.data() } as { id: string } & PuzzleDoc));
 }
 
@@ -136,12 +159,12 @@ export async function upsertUser(u: User) {
     providerIds: u.providerData.map((p) => p?.providerId ?? "").filter(Boolean),
     settings: { darkMode: true, emailNotifications: true },
     stats: { puzzlesCreated: 0, puzzlesPlayed: 0, puzzlesCompleted: 0 },
-    pinned: []
+    pinned: [],
   };
   await setDoc(
     ref.user(u.uid),
     { ...payload, createdAt: serverTimestamp(), updatedAt: serverTimestamp() },
-    { merge: true }
+    { merge: true },
   );
 }
 
@@ -154,9 +177,9 @@ export async function startPlay(puzzleId: string, uid: string) {
       guesses: [],
       timeSpentSec: 0,
       createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp()
+      updatedAt: serverTimestamp(),
     },
-    { merge: true }
+    { merge: true },
   );
 }
 
@@ -165,5 +188,55 @@ export async function setLike(puzzleId: string, uid: string, like: boolean) {
     await setDoc(ref.reaction(puzzleId, uid), { type: "like", createdAt: serverTimestamp() });
   } else {
     await deleteDoc(ref.reaction(puzzleId, uid));
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Browse grid data loader (seed-friendly, resilient)                  */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Fetches up to `max` puzzles for the Browse page:
+ * - Pinned first, then newest.
+ * - No illegal `in` filters; works even if `visibility` is missing.
+ * - Falls back to unordered fetch if composite index/field is missing.
+ * - Normalizes difficulty to "Easy" | "Medium" | "Hard".
+ */
+export async function fetchBrowsePuzzles(max = 60) {
+  const toTitle = (s: string) => (s ? s[0].toUpperCase() + s.slice(1).toLowerCase() : s);
+
+  const mapDoc = (d: any) => {
+    const x = d.data() as any;
+    const createdBy =
+      typeof x?.createdBy === "object"
+        ? x.createdBy.displayName ?? x.createdBy.uid ?? "Unknown"
+        : x?.createdBy ?? "Unknown";
+    console.log("puzzle data", x)
+    return {
+      id: d.id,
+      title: x.title ?? "Untitled",
+      description: x.description ?? "",
+      category: x.category ?? "General",
+      difficulty: toTitle((x.difficulty ?? "medium").toString()),
+      solveCount: x.solveCount ?? 0,
+      createdBy,
+      imageUrl: x.imageUrl ?? "",
+      isPinned: !!x.isPinned,
+      createdAt:
+        x.createdAt?.toDate?.()?.toISOString?.() ??
+        x.publishedAt?.toDate?.()?.toISOString?.() ??
+        new Date().toISOString(),
+    };
+  };
+
+  try {
+    // Preferred ordering (may require a composite index if you add a where())
+    const qRef = query(col.puzzles(), orderBy("isPinned", "desc"), orderBy("createdAt", "desc"), limit(max));
+    const snap = await getDocs(qRef);
+    return snap.docs.map(mapDoc);
+  } catch (err) {
+    console.warn("browse ordered query failed; falling back:", err);
+    const snap = await getDocs(col.puzzles());
+    return snap.docs.slice(0, max).map(mapDoc);
   }
 }
