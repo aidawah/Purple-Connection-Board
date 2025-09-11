@@ -267,37 +267,39 @@
           {clearSelection}
           {shuffleUnsolved}
         >
-          <!-- Fallback toolbar (default component toolbar) -->
-          <div
-            class="sticky top-0 z-10 flex items-center gap-3 px-4 py-3 rounded-2xl border border-[#1a2a43]
-                   bg-gradient-to-b from-[rgba(18,26,43,.85)] to-[rgba(18,26,43,.65)] backdrop-blur-md"
-          >
-            <h1 class="m-0 text-[20px] font-bold">{puzzle?.title ?? "Puzzle"}</h1>
-            <div class="flex-1" />
+<!-- Browse-style toolbar: white in light, #18181B in dark, buttons like "Play Puzzle" -->
+<div class="brand-scope sticky top-0 z-10">
+  <div class="brand-toolbar rounded-2xl border px-4 py-3 flex items-center gap-3">
+    <h1 class="toolbar-title m-0 text-[20px] font-bold">{puzzle?.title ?? "Puzzle"}</h1>
+    <div class="flex-1" />
 
-            <button
-              class="inline-flex items-center h-9 px-3 rounded-lg font-semibold bg-[#0f3a38] text-[#bff7ee]
-                     border border-[#14615b] hover:bg-[#12524f] hover:border-[#18837a] disabled:opacity-50"
-              on:click={(e) => clearSelection(e)}
-              disabled={selection.length === 0 && solved.length === 0}
-              title="Clear selection (Shift-click to also clear solved groups)"
-            >Clear</button>
+    <!-- Clear = ghost/outline brand -->
+    <button
+      class="btn-ghost focus:outline-none focus:brand-ring disabled:opacity-50"
+      on:click={(e) => clearSelection(e)}
+      disabled={selection.length === 0 && solved.length === 0}
+      title="Clear selection (Shift-click to also clear solved groups)"
+    >Clear</button>
 
-            <button
-              class="inline-flex items-center h-9 px-3 rounded-lg font-semibold border border-[#304a76]
-                     text-[#cfe1ff] bg-transparent hover:bg-[#14223d]"
-              on:click={shuffleUnsolved}
-              title="Shuffle unsolved cards"
-            >Shuffle</button>
+    <!-- Shuffle = primary brand-filled (like 'Play Puzzle') -->
+    <button
+      class="btn-primary focus:outline-none focus:brand-ring"
+      on:click={shuffleUnsolved}
+      title="Shuffle unsolved cards"
+    >Shuffle</button>
 
-            {#each solved as gid}
-              <span class="inline-flex items-center gap-2 rounded-full px-3 h-8 text-sm
-                           text-[#0f766e] bg-[rgba(20,184,166,.16)] border border-[rgba(20,184,166,.35)]">
-                <span class="w-2 h-2 rounded-full bg-[#0f766e]" />
-                {groupName(puzzle!, gid)}
-              </span>
-            {/each}
-          </div>
+    {#each solved as gid}
+      <span class="inline-flex items-center gap-2 rounded-full px-3 h-8 text-sm
+                   brand-chip-text brand-chip-bg brand-chip-border">
+        <span class="w-2 h-2 rounded-full brand-dot" />
+        {groupName(puzzle!, gid)}
+      </span>
+    {/each}
+  </div>
+</div>
+
+
+
         </slot>
       </div>
     {:else}
@@ -320,29 +322,31 @@
       {/if}
 
       <!-- Grid slot with fallback -->
-      <slot name="grid" {cells} {cellPx} {shaking} {toggle}>
-        <div
-          class="grid"
-          class:animate-shake={shaking}
-          style={`grid-template-columns: repeat(4, ${cellPx}px); grid-auto-rows: ${cellPx}px; gap:14px;`}
-        >
-          {#each cells as c (c.id)}
-            <PuzzleCard
-              text={c.text}
-              wordId={c.id}
-              selected={c.selected}
-              locked={c.locked}
-              label={c.label}
-              on:toggle={() => toggle(c.id)}
-            />
-          {/each}
-        </div>
-      </slot>
+<slot name="grid" {cells} {cellPx} {shaking} {toggle}>
+  <div
+    class="grid"
+    class:animate-shake={shaking}
+    style={`grid-template-columns: repeat(4, ${cellPx}px); grid-auto-rows: ${cellPx}px; gap:14px;`}
+  >
+    {#each cells as c (c.id)}
+      <PuzzleCard
+        text={c.text}
+        wordId={c.id}
+        selected={c.selected}
+        locked={c.locked}
+        label={c.label}
+        on:toggle={() => toggle(c.id)}
+      />
+    {/each}
+  </div>
+</slot>
+
     </div>
   </div>
 {/if}
 
 <style>
+  /* shake … (unchanged) */
   @keyframes shake {
     10%, 90% { transform: translateX(-1px); }
     20%, 80% { transform: translateX(2px); }
@@ -350,6 +354,86 @@
     40%, 60% { transform: translateX(4px); }
   }
   .animate-shake { animation: shake .35s; }
+/* Normalize brand (works with --brand or --color-brand) */
+.brand-scope { --pc-brand: var(--brand, var(--color-brand, #14b8a6)); }
+
+/* Keep your existing brand-ring */
+.brand-ring {
+  box-shadow:
+    0 0 0 2px color-mix(in oklab, var(--pc-brand) 40%, transparent),
+    var(--tw-shadow, 0 0 #0000);
+}
+
+/* NEW toolbar surface: match Browse cards */
+/* Light = #FFFFFF, Dark = #18181B, with neutral borders and subtle shadows */
+.brand-toolbar {
+  background: #ffffff;
+  border-color: #e5e7eb;               /* zinc-200 */
+  --tw-shadow: 0 1px 2px rgba(0,0,0,.06);
+  box-shadow:
+    var(--tw-ring-offset-shadow, 0 0 #0000),
+    var(--tw-ring-shadow, 0 0 #0000),
+    var(--tw-shadow);
+}
+:global(.dark) .brand-toolbar {
+  background: #18181B;                 /* zinc-900 */
+  border-color: #27272a;               /* zinc-800 */
+  --tw-shadow: 0 1px 2px rgba(0,0,0,.20);
+  box-shadow:
+    var(--tw-ring-offset-shadow, 0 0 #0000),
+    var(--tw-ring-shadow, 0 0 #0000),
+    var(--tw-shadow);
+}
+
+/* Heading color like Browse card titles */
+.toolbar-title { color: #111827; }     /* zinc-900 */
+:global(.dark) .toolbar-title { color: #f4f4f5; }  /* zinc-100 */
+
+/* Primary brand-filled button (like "Play Puzzle") */
+.btn-primary {
+  --btn-py: 0.5rem; --btn-px: 1rem;
+  display: inline-flex; align-items: center; justify-content: center;
+  padding: var(--btn-py) var(--btn-px);
+  border-radius: .5rem;                 /* md */
+  font-weight: 600; font-size: .875rem; /* text-sm */
+  background: var(--pc-brand);
+  color: #ffffff;
+  border: 1px solid color-mix(in oklab, var(--pc-brand) 60%, transparent);
+  --tw-shadow: 0 1px 2px rgba(0,0,0,.08);
+  box-shadow:
+    var(--tw-ring-offset-shadow, 0 0 #0000),
+    var(--tw-ring-shadow, 0 0 #0000),
+    var(--tw-shadow);
+  transition: filter .15s ease, transform .15s ease, box-shadow .15s ease;
+}
+.btn-primary:hover { filter: brightness(.95); }
+
+/* Ghost/outline brand button (like "Clear Filters") */
+.btn-ghost {
+  --btn-py: 0.5rem; --btn-px: .9rem;
+  display: inline-flex; align-items: center; justify-content: center;
+  padding: var(--btn-py) var(--btn-px);
+  border-radius: .5rem;
+  font-weight: 600; font-size: .875rem;
+  color: color-mix(in oklab, var(--pc-brand) 90%, #0f766e);
+  background: color-mix(in oklab, var(--pc-brand) 10%, transparent);
+  border: 1px solid color-mix(in oklab, var(--pc-brand) 30%, transparent);
+  transition: background-color .15s ease, filter .15s ease;
+}
+.btn-ghost:hover { background: color-mix(in oklab, var(--pc-brand) 14%, transparent); }
+
+:global(.dark) .btn-ghost {
+  color: color-mix(in oklab, var(--pc-brand) 90%, #9ae6e1);
+  background: color-mix(in oklab, var(--pc-brand) 18%, transparent);
+  border-color: color-mix(in oklab, var(--pc-brand) 35%, transparent);
+}
+:global(.dark) .btn-ghost:hover { background: color-mix(in oklab, var(--pc-brand) 24%, transparent); }
+
+/* (Optional) you can keep your existing brand-chip-* rules — they already work */
+
 </style>
+
+
+
 
 
