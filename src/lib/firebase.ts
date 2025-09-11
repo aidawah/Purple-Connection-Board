@@ -11,11 +11,8 @@ import {
   getDocs,
   getDoc,
   setDoc,
-  addDoc,
   deleteDoc,
-  serverTimestamp,
-  type QueryDocumentSnapshot,
-  type DocumentData
+  serverTimestamp
 } from "firebase/firestore";
 import {
   getAuth,
@@ -31,7 +28,6 @@ import {
 import { Converters } from "$lib/converters";
 import type { PuzzleDoc, UserDoc } from "$lib/types";
 
-// 1) Client Firebase config (public web keys are fine in client apps)
 const firebaseConfig = {
   apiKey: "AIzaSyAvPhsd2JLcqgOOnC9VlJeTmfiM-wMmmeA",
   authDomain: "game-39c6f.firebaseapp.com",
@@ -44,20 +40,10 @@ const firebaseConfig = {
 
 if (!firebaseConfig.apiKey) throw new Error("Missing PUBLIC_FIREBASE_API_KEY");
 
-// 2) App / Firestore / Auth init
 const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app);
 export const auth = getAuth(app);
 
-// Emulators (optional)
-// import { connectFirestoreEmulator } from "firebase/firestore";
-// import { connectAuthEmulator } from "firebase/auth";
-// if (import.meta.env.DEV) {
-//   connectFirestoreEmulator(db, "localhost", 8080);
-//   connectAuthEmulator(auth, "http://localhost:9099");
-// }
-
-// 3) Auth
 const googleProvider = new GoogleAuthProvider();
 const appleProvider = new OAuthProvider("apple.com");
 
@@ -69,7 +55,6 @@ export async function signInWithGoogle() {
 
   const result = await signInWithPopup(auth, provider);
 
-  // Try to refresh avatar from Google userinfo
   try {
     const cred = GoogleAuthProvider.credentialFromResult(result);
     const accessToken = cred?.accessToken;
@@ -115,11 +100,10 @@ export function normalizeGoogleAvatar(rawUrl: string, size = 128) {
   }
 }
 
-// 4) Converters
 export const col = {
   puzzles: () => collection(db, "puzzles").withConverter(Converters.puzzles),
   users: () => collection(db, "users").withConverter(Converters.users),
-  activity: () => collection(db, "activity").withConverter(Converters.activity),
+  activity: () => collection(db, "activity").withConverter(Converters.activity)
 };
 export const ref = {
   puzzle: (id: string) => doc(db, "puzzles", id).withConverter(Converters.puzzles),
@@ -129,28 +113,20 @@ export const ref = {
   reaction: (puzzleId: string, uid: string) =>
     doc(db, `puzzles/${puzzleId}/reactions/${uid}`).withConverter(Converters.reactions),
   play: (puzzleId: string, uid: string) =>
-    doc(db, `puzzles/${puzzleId}/plays/${uid}`).withConverter(Converters.plays),
+    doc(db, `puzzles/${puzzleId}/plays/${uid}`).withConverter(Converters.plays)
 };
 
-// List latest public puzzles
 export async function fetchPublicPuzzles(max = 20) {
-  const q = query(
-    col.puzzles(),
-    where("visibility", "==", "public"),
-    orderBy("publishedAt", "desc"),
-    limit(max)
-  );
+  const q = query(col.puzzles(), where("visibility", "==", "public"), orderBy("publishedAt", "desc"), limit(max));
   const snap = await getDocs(q);
   return snap.docs.map((d) => ({ id: d.id, ...d.data() } as { id: string } & PuzzleDoc));
 }
 
-// Fetch a single puzzle
 export async function fetchPuzzle(id: string) {
   const snap = await getDoc(ref.puzzle(id));
   return snap.exists() ? ({ id: snap.id, ...snap.data() } as { id: string } & PuzzleDoc) : null;
 }
 
-// Ensure a minimal user doc exists (call after sign-in)
 export async function upsertUser(u: User) {
   const payload: UserDoc = {
     displayName: u.displayName ?? "Anonymous",
@@ -160,13 +136,15 @@ export async function upsertUser(u: User) {
     providerIds: u.providerData.map((p) => p?.providerId ?? "").filter(Boolean),
     settings: { darkMode: true, emailNotifications: true },
     stats: { puzzlesCreated: 0, puzzlesPlayed: 0, puzzlesCompleted: 0 },
-    pinned: [],
-    // createdAt/updatedAt added below
+    pinned: []
   };
-  await setDoc(ref.user(u.uid), { ...payload, createdAt: serverTimestamp(), updatedAt: serverTimestamp() }, { merge: true });
+  await setDoc(
+    ref.user(u.uid),
+    { ...payload, createdAt: serverTimestamp(), updatedAt: serverTimestamp() },
+    { merge: true }
+  );
 }
 
-// Start or update a play for the current user
 export async function startPlay(puzzleId: string, uid: string) {
   await setDoc(
     ref.play(puzzleId, uid),
@@ -182,7 +160,6 @@ export async function startPlay(puzzleId: string, uid: string) {
   );
 }
 
-// Like/unlike a puzzle
 export async function setLike(puzzleId: string, uid: string, like: boolean) {
   if (like) {
     await setDoc(ref.reaction(puzzleId, uid), { type: "like", createdAt: serverTimestamp() });
@@ -190,7 +167,3 @@ export async function setLike(puzzleId: string, uid: string, like: boolean) {
     await deleteDoc(ref.reaction(puzzleId, uid));
   }
 }
-
-// raw access without helpers:
-// const raw = await getDocs(collection(db, "puzzles"));
-// raw.docs.map((d: QueryDocumentSnapshot<DocumentData>) => d.data());

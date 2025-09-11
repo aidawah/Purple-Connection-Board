@@ -31,9 +31,11 @@ export interface UserDoc {
   updatedAt?: Timestamp;
 }
 
+/** ── N×N Puzzle types ─────────────────────────────────────────────────────── */
 export interface PuzzleCategory {
   title: string;
-  words: [string, string, string, string]; // 4 words
+  /** Each category contains `groupSize` words (usually equals gridSize). */
+  words: string[]; // length === groupSize
 }
 
 export interface PuzzleStats {
@@ -52,8 +54,21 @@ export interface CreatedBy {
 export interface PuzzleDoc {
   title: string;
   description?: string;
-  categories: [PuzzleCategory, PuzzleCategory, PuzzleCategory, PuzzleCategory]; // 4x4
-  wordsFlat: [string, string, string, string, string, string, string, string, string, string, string, string, string, string, string, string];
+
+  /** Size of board (rows/cols), e.g., 4, 5, 6… */
+  gridSize: number;
+
+  /**
+   * Words per category. For classic square boards, set `groupSize === gridSize`.
+   * Kept separate so you could support non-square groupings later if desired.
+   */
+  groupSize: number;
+
+  /** Must have exactly `gridSize` categories. */
+  categories: PuzzleCategory[];
+
+  /** Must have exactly `gridSize * groupSize` words. */
+  wordsFlat: string[];
 
   difficulty: Difficulty;
   tags?: string[];
@@ -74,7 +89,8 @@ export interface PuzzleDoc {
 export type PlayStatus = "in_progress" | "completed" | "failed";
 
 export interface PlayGuess {
-  words: [string, string, string, string];
+  /** A single guess of exactly `groupSize` words for the puzzle being played. */
+  words: string[];
   correct: boolean;
   ts: Timestamp;
 }

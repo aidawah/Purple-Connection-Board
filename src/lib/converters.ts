@@ -26,20 +26,28 @@ const isDifficulty = (x: unknown): x is Difficulty => x === "easy" || x === "med
 const isVisibility = (x: unknown): x is Visibility => x === "public" || x === "unlisted" || x === "private";
 
 function validatePuzzle(p: PuzzleDoc) {
+  // N×N checks
+  assert(Number.isInteger(p.gridSize) && p.gridSize >= 2 && p.gridSize <= 10, "gridSize out of range (2..10)");
+  assert(Number.isInteger(p.groupSize) && p.groupSize >= 2 && p.groupSize <= 10, "groupSize out of range (2..10)");
+
+  assert(Array.isArray(p.categories) && p.categories.length === p.gridSize, "categories.length must equal gridSize");
+  p.categories.forEach((c, i) => {
+    assert(typeof c.title === "string" && c.title.trim().length > 0, `categories[${i}].title required`);
+    assert(Array.isArray(c.words) && c.words.length === p.groupSize, `categories[${i}].words must have ${p.groupSize} items`);
+  });
+
+  assert(
+    Array.isArray(p.wordsFlat) && p.wordsFlat.length === p.gridSize * p.groupSize,
+    "wordsFlat length must equal gridSize * groupSize"
+  );
+
   assert(isDifficulty(p.difficulty), "Invalid difficulty");
   assert(isVisibility(p.visibility), "Invalid visibility");
-  assert(Array.isArray(p.categories) && p.categories.length === 4, "Puzzle must have 4 categories");
-  p.categories.forEach((c, i) => {
-    assert(Array.isArray(c.words) && c.words.length === 4, `Category ${i} must have 4 words`);
-  });
-  assert(Array.isArray(p.wordsFlat) && p.wordsFlat.length === 16, "wordsFlat must be 16 items");
 }
 
 // ---------- helpers ----------
-const passthroughFrom = <T>(snap: QueryDocumentSnapshot, _?: SnapshotOptions): T =>
-  snap.data() as T;
-const passthroughTo = <T>(value: WithFieldValue<T>): DocumentData =>
-  value as unknown as DocumentData;
+const passthroughFrom = <T>(snap: QueryDocumentSnapshot, _?: SnapshotOptions): T => snap.data() as T;
+const passthroughTo = <T>(value: WithFieldValue<T>): DocumentData => value as unknown as DocumentData;
 
 // ---------- converters ----------
 export const userConverter: FirestoreDataConverter<UserDoc> = {
@@ -49,8 +57,11 @@ export const userConverter: FirestoreDataConverter<UserDoc> = {
 
 export const puzzleConverter: FirestoreDataConverter<PuzzleDoc> = {
   toFirestore: (value: WithFieldValue<PuzzleDoc>) => {
-    // validate strictly when possible
-    validatePuzzle(value as PuzzleDoc);
+    const maybe = value as PuzzleDoc;
+    // Validate when the sizing fields are present (won't block partial merges)
+    if (typeof maybe.gridSize === "number" && typeof maybe.groupSize === "number") {
+      validatePuzzle(maybe);
+    }
     return value as unknown as DocumentData;
   },
   fromFirestore: passthroughFrom
