@@ -12,6 +12,8 @@
     getDocs,
     startAfter,
     onSnapshot,
+    where,
+    documentId,
     type QueryDocumentSnapshot,
     type DocumentData
   } from 'firebase/firestore';
@@ -20,11 +22,12 @@
 
   /** ── UI types ─────────────────────────────────────────────────────────── */
   type FeedItem = {
-    id: string;
+    id: string; // activity doc id
     type: 'puzzle_created' | 'puzzle_published' | 'completed' | 'comment' | 'puzzle_solved';
     user: string;
     action: string;
-    puzzleTitle?: string;
+    puzzleId: string | null;     // <- needed for linking
+    puzzleTitle: string;         // <- will be hydrated from puzzles/{puzzleId} if missing
     timestamp: string;
     avatar?: string;
   };
@@ -99,12 +102,20 @@
             ? 'commented'
             : 'created a new puzzle');
 
+    // Prefer embedded puzzleTitle; otherwise we’ll hydrate from puzzles/{puzzleId}
+    const puzzleId: string | null = x.puzzleId ?? null;
+    const puzzleTitleFromDoc =
+      x.puzzleTitle ??
+      x.puzzle?.title ??
+      (typeof puzzleId === 'string' && puzzleId.startsWith('pz_') ? '' : puzzleId ?? '');
+
     return {
       id: d.id,
       type: (x.type ?? 'puzzle_created') as FeedItem['type'],
       user: userName,
       action,
-      puzzleTitle: x.puzzleTitle ?? x.puzzleId ?? 'Untitled',
+      puzzleId,
+      puzzleTitle: puzzleTitleFromDoc || '', // blank => needs hydration
       timestamp: ts,
       avatar: initials(userName)
     };
@@ -123,6 +134,46 @@
     };
   }
 
+  /** ── batch join: hydrate missing puzzle titles from puzzles/{id} ───────── */
+  async function hydrateTitles(items: FeedItem[]) {
+    // Find activities that need a title and have a puzzleId
+    const needing = items
+      .filter(i => i.puzzleId && !i.puzzleTitle)
+      .map(i => i.puzzleId!) as string[];
+
+    if (needing.length === 0) return;
+
+    // chunk in batches of 10 for 'in' queries
+    const chunk = <T,>(arr: T[], size: number) =>
+      Array.from({ length: Math.ceil(arr.length / size) }, (_, k) => arr.slice(k * size, k * size + size));
+
+    const chunks = chunk(needing, 10);
+    const titleMap = new Map<string, string>();
+
+    for (const ids of chunks) {
+      const qRef = query(
+        collection(db, 'puzzles'),
+        where(documentId(), 'in', ids)
+      );
+      const snap = await getDocs(qRef);
+      snap.forEach(docSnap => {
+        const data = docSnap.data() as any;
+        const title = data?.title ?? 'Untitled';
+        titleMap.set(docSnap.id, title);
+      });
+    }
+
+    // apply titles in-place
+    for (const it of items) {
+      if (it.puzzleId && !it.puzzleTitle) {
+        const t = titleMap.get(it.puzzleId);
+        if (t) it.puzzleTitle = t;
+      }
+      // if still blank, show a safe fallback
+      if (!it.puzzleTitle) it.puzzleTitle = 'Untitled';
+    }
+  }
+
   /** ── loaders ─────────────────────────────────────────────────────────── */
   let unsubRecent: () => void;
 
@@ -133,33 +184,33 @@
 
     // Featured
     try {
-// replace the featured query in +page.svelte
-const puzzlesQ = query(
-  collection(db, 'puzzles'),
-  orderBy('isPinned', 'desc'),
-  orderBy('createdAt', 'desc'),   // usually already present on docs
-  limit(12)
-);
+      const puzzlesQ = query(
+        collection(db, 'puzzles'),
+        orderBy('isPinned', 'desc'),
+        orderBy('createdAt', 'desc'),
+        limit(12)
+      );
       const snap = await getDocs(puzzlesQ);
       featuredPuzzles = snap.docs.map(mapPuzzle);
-      console.log('[featured] size:', snap.size);
     } catch (e) {
       console.warn('Featured load failed:', e);
       featuredPuzzles = [];
     }
 
-    // First page (with fallback)
+    // First page
     await loadMoreActivity(true);
 
-    // Live listener for newest slice
+    // Live listener (top PAGE_SIZE, newest first); hydrate titles for live slice too
     const liveQ = query(
       collection(db, 'activity'),
       orderBy('createdAt', 'desc'),
       limit(PAGE_SIZE)
     );
-    unsubRecent = onSnapshot(liveQ, (snap) => {
+    unsubRecent = onSnapshot(liveQ, async (snap) => {
       const fresh = snap.docs.map(mapActivity);
-      // merge & de-dup
+      await hydrateTitles(fresh);
+
+      // merge & de-dup by activity id, keep newest-first
       const seen = new Set<string>();
       const merged = [...fresh, ...feedItems].filter((it) => {
         if (seen.has(it.id)) return false;
@@ -178,7 +229,6 @@ const puzzlesQ = query(
     loadingFeed = initial;
 
     try {
-      // primary: ordered page
       let qRef = query(
         collection(db, 'activity'),
         orderBy('createdAt', 'desc'),
@@ -193,37 +243,7 @@ const puzzlesQ = query(
         );
       }
 
-      let snap = await getDocs(qRef);
-      console.log('[activity primary] size:', snap.size);
-
-      // fallback: unordered fetch then sort client-side
-      if (snap.empty) {
-        const all = await getDocs(collection(db, 'activity'));
-        console.log('[activity fallback] size:', all.size);
-        if (!all.empty) {
-          const itemsUnsorted = all.docs.map(mapActivity);
-          itemsUnsorted.sort((a, b) => {
-            // try to sort by the timestamp string if possible; newest first
-            return (new Date(b.timestamp).getTime() || 0) - (new Date(a.timestamp).getTime() || 0);
-          });
-          snap = {
-            ...all,
-            // fake a page by taking PAGE_SIZE
-            docs: all.docs.slice(0, PAGE_SIZE)
-          } as any;
-          // we’ll just set below using itemsUnsorted.slice(..)
-          if (initial) {
-            feedItems = itemsUnsorted.slice(0, PAGE_SIZE);
-          } else {
-            const existing = new Set(feedItems.map((x) => x.id));
-            feedItems = [...feedItems, ...itemsUnsorted.filter((x) => !existing.has(x.id)).slice(0, PAGE_SIZE)];
-          }
-          lastFeedDoc = all.docs[Math.min(PAGE_SIZE - 1, all.docs.length - 1)] ?? null;
-          noMore = all.size <= PAGE_SIZE;
-          return;
-        }
-      }
-
+      const snap = await getDocs(qRef);
       if (snap.empty) {
         if (initial) feedItems = [];
         noMore = true;
@@ -231,6 +251,8 @@ const puzzlesQ = query(
       }
 
       const items = snap.docs.map(mapActivity);
+      await hydrateTitles(items); // <- join titles here
+
       if (initial) {
         feedItems = items;
       } else {
@@ -293,12 +315,14 @@ const puzzlesQ = query(
             {#each feedItems as item}
               <div class="p-6 transition-colors hover:bg-[color:var(--brand)]/5 dark:hover:bg-[color:var(--brand)]/10">
                 <div class="flex items-start gap-4">
+                  <!-- Avatar -->
                   <div class="flex-shrink-0">
                     <div class="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-[color:var(--brand)] to-emerald-500 text-sm font-semibold text-white ring-1 ring-white/40 dark:ring-0">
                       {item.avatar}
                     </div>
                   </div>
 
+                  <!-- Content -->
                   <div class="min-w-0 flex-1">
                     <div class="mb-2 flex items-center gap-2">
                       <span class="flex h-5 w-5 items-center justify-center" aria-hidden="true">
@@ -314,9 +338,13 @@ const puzzlesQ = query(
 
                     <div class="mt-2 flex items-center justify-between">
                       <span class="text-sm text-zinc-500 dark:text-zinc-400">{item.timestamp}</span>
-                      <a href="/browse" class="text-sm font-medium text-[color:var(--brand)] underline-offset-4 hover:underline focus:outline-none focus:ring-2 focus:ring-[color:var(--brand)]/40 dark:text-teal-300">
-                        View Puzzle
-                      </a>
+                      {#if item.puzzleId}
+                        <a
+                          href={`/gameboard/${item.puzzleId}`}
+                          class="text-sm font-medium text-[color:var(--brand)] underline-offset-4 hover:underline focus:outline-none focus:ring-2 focus:ring-[color:var(--brand)]/40 dark:text-teal-300">
+                          View Puzzle
+                        </a>
+                      {/if}
                     </div>
                   </div>
                 </div>
@@ -375,7 +403,7 @@ const puzzlesQ = query(
 
                 <div class="flex items-center justify-between">
                   <span class="text-xs text-zinc-500 dark:text-zinc-400">{puzzle.solveCount} solves</span>
-                  <a href="/browse" class="text-xs font-medium text-[color:var(--brand)] underline-offset-4 hover:underline focus:outline-none focus:ring-2 focus:ring-[color:var(--brand)]/40">
+                  <a href={`/gameboard/${puzzle.id}`} class="text-xs font-medium text-[color:var(--brand)] underline-offset-4 hover:underline focus:outline-none focus:ring-2 focus:ring-[color:var(--brand)]/40">
                     Play →
                   </a>
                 </div>
