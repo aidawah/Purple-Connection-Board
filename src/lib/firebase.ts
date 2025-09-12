@@ -17,6 +17,8 @@ import {
   setDoc,           // create or update a document
   deleteDoc,        // delete a document
   serverTimestamp,  // special value: “use server time” when writing
+  onSnapshot,       // listen to live updates for a query
+  startAfter        // paginate queries
 } from "firebase/firestore";
 
 // Firebase Auth APIs: sign in/out and observe user state.
@@ -33,7 +35,7 @@ import {
 
 // --- App-local imports: Firestore converters and shared types for data safety.
 import { Converters } from "$lib/converters";
-import type { PuzzleDoc, UserDoc } from "$lib/types";
+import type { PuzzleDoc, UserDoc, ActivityDoc } from "$lib/types";
 
 /* ------------------------------------------------------------------ */
 /* Firebase boot                                                       */
@@ -62,8 +64,13 @@ export const db = getFirestore(app);
 // Create an Auth instance (handles sign-in, sign-out, current user).
 export const auth = getAuth(app);
 
+// Project id (handy for debugging)
 export const PROJECT_ID = firebaseConfig.projectId;
 
+
+/* ------------------------------------------------------------------ */
+/* Auth helpers                                                        */
+/* ------------------------------------------------------------------ */
 
 // Provider for Google sign-in flows.
 const googleProvider = new GoogleAuthProvider();
@@ -73,36 +80,25 @@ const appleProvider = new OAuthProvider("apple.com");
 
 // Sign in the user with Google using a popup window.
 export async function signInWithGoogle() {
-  // Create a provider and request common OpenID scopes for basic profile info.
   const provider = new GoogleAuthProvider();
   provider.addScope("openid");
   provider.addScope("profile");
   provider.addScope("email");
 
-  // Open the Google sign-in popup and wait for the user to complete
   const result = await signInWithPopup(auth, provider);
 
-  // fetch a profile picture and save it.
   try {
-    // Extract the OAuth credential (contains an access token).
     const cred = GoogleAuthProvider.credentialFromResult(result);
     const accessToken = cred?.accessToken;
-
-    // Get the currently signed-in Firebase Auth user.
     const u = auth.currentUser;
 
-    // If we have both an access token and a current user, call Google’s userinfo endpoint.
     if (accessToken && u) {
       const resp = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
         headers: { Authorization: `Bearer ${accessToken}` },
       });
-
-      // If the HTTP call worked, parse the JSON to find the picture URL.
       if (resp.ok) {
         const data = await resp.json();
         const picture: string | undefined = data?.picture;
-
-        // If we got a picture, store it on the Auth profile.
         if (picture) await updateProfile(u, { photoURL: normalizeGoogleAvatar(picture, 128) });
       }
     }
@@ -110,32 +106,18 @@ export async function signInWithGoogle() {
     console.warn("Google avatar refresh failed:", e);
   }
 
-  // Return the sign-in result - user and provider deets.
   return result;
 }
 
-// Sign in with Apple using a popup.
-// (The Apple flow/consent happens on Apple’s side; Firebase handles the rest.)
 export function signInWithApple() {
   return signInWithPopup(auth, appleProvider);
 }
-
-// Sign the current user out of Firebase Auth.
 export function signOut() {
   return firebaseSignOut(auth);
 }
-
-// Register a listener that fires whenever the Auth user changes
-// (e.g., app start, sign-in, sign-out). Returns an unsubscribe function.
 export function onUserChanged(cb: (u: User | null) => void) {
   return onAuthStateChanged(auth, cb);
 }
-
-// Normalize Google-hosted avatar URLs:
-// - Force a specific size via the "sz" query parameter.
-// - Strip trailing size hints in the path (e.g., "=s96-c").
-// - Remove any hash fragments.
-// If parsing fails or the host isn’t Google, return the original URL.
 export function normalizeGoogleAvatar(rawUrl: string, size = 128) {
   try {
     const u = new URL(rawUrl);
@@ -151,36 +133,32 @@ export function normalizeGoogleAvatar(rawUrl: string, size = 128) {
   }
 }
 
-// strongly-typed collection references.
-// The .withConverter ensures reads/writes use our TypeScript-safe shapes.
+
+/* ------------------------------------------------------------------ */
+/* Typed refs/collections                                              */
+/* ------------------------------------------------------------------ */
+
 export const col = {
   puzzles: () => collection(db, "puzzles").withConverter(Converters.puzzles),
   users: () => collection(db, "users").withConverter(Converters.users),
   activity: () => collection(db, "activity").withConverter(Converters.activity),
 };
 
-
-// These help keep path strings consistent across the codebase.
 export const ref = {
-  // A single puzzle document by ID.
   puzzle: (id: string) => doc(db, "puzzles", id).withConverter(Converters.puzzles),
-
-  // A single user document by Auth UID.
   user: (uid: string) => doc(db, "users", uid).withConverter(Converters.users),
-
-  // A single “collection” document under a specific user (subcollection).
   userCollection: (uid: string, cid: string) =>
     doc(db, `users/${uid}/collections/${cid}`).withConverter(Converters.userCollections),
-
-  // A “reaction” document under a puzzle, keyed by user (e.g., like).
   reaction: (puzzleId: string, uid: string) =>
     doc(db, `puzzles/${puzzleId}/reactions/${uid}`).withConverter(Converters.reactions),
-
-  // A “play” document tracks a user’s progress on a specific puzzle.
   play: (puzzleId: string, uid: string) =>
     doc(db, `puzzles/${puzzleId}/plays/${uid}`).withConverter(Converters.plays),
 };
 
+
+/* ------------------------------------------------------------------ */
+/* App-level query helpers                                             */
+/* ------------------------------------------------------------------ */
 
 export async function fetchPublicPuzzles(max = 20) {
   const qRef = query(
@@ -189,23 +167,18 @@ export async function fetchPublicPuzzles(max = 20) {
     orderBy("publishedAt", "desc"),
     limit(max),
   );
-
-  // Execute the query and map each document snapshot to a typed object with an `id`.
   const snap = await getDocs(qRef);
   return snap.docs.map((d) => ({ id: d.id, ...d.data() } as { id: string } & PuzzleDoc));
 }
+
 
 // Fetch a single puzzle by its document ID.
 // Returns a typed object (including the `id`) if it exists, otherwise `null`.
 // src/lib/firebase.ts
 
 // Fetch a single puzzle by its document ID and normalize to the GameBoard engine shape.
-export async function fetchPuzzle(id: string): Promise<{
-  id: string;
-  title: string;
-  description: string;
-  words: { id: string; text: string; groupId: "A" | "B" | "C" | "D" }[];
-} | null> {
+
+export async function fetchPuzzle(id: string) {
   const snap = await getDoc(ref.puzzle(id));
   if (!snap.exists()) return null;
 
@@ -239,9 +212,9 @@ export async function fetchPuzzle(id: string): Promise<{
   };
 }
 
-
 // Create or update (merge) a user document based on the currently signed-in Auth user.
 // Initializes sensible defaults for settings/stats/pinned on first sign-in.
+
 export async function upsertUser(u: User) {
   const payload: UserDoc = {
     displayName: u.displayName ?? "Anonymous",
@@ -253,11 +226,6 @@ export async function upsertUser(u: User) {
     stats: { puzzlesCreated: 0, puzzlesPlayed: 0, puzzlesCompleted: 0 },
     pinned: [],
   };
-
-  // setDoc with { merge: true } means:
-  // - create the doc if it doesn’t exist
-  // - update only the provided fields if it does exist
-  // We also stamp server-generated timestamps for auditing.
   await setDoc(
     ref.user(u.uid),
     { ...payload, createdAt: serverTimestamp(), updatedAt: serverTimestamp() },
@@ -265,8 +233,6 @@ export async function upsertUser(u: User) {
   );
 }
 
-// Start (or update) a play session for a given puzzle and user.
-// This initializes fields like status, guesses, and timers.
 export async function startPlay(puzzleId: string, uid: string) {
   await setDoc(
     ref.play(puzzleId, uid),
@@ -278,13 +244,10 @@ export async function startPlay(puzzleId: string, uid: string) {
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     },
-    { merge: true }, // merge so we don’t blow away any existing progress fields
+    { merge: true },
   );
 }
 
-// Set or remove a “like” reaction on a puzzle for a specific user.
-// - When like === true: write a reaction document with a createdAt timestamp.
-// - When like === false: delete that reaction document.
 export async function setLike(puzzleId: string, uid: string, like: boolean) {
   if (like) {
     await setDoc(ref.reaction(puzzleId, uid), { type: "like", createdAt: serverTimestamp() });
@@ -294,29 +257,19 @@ export async function setLike(puzzleId: string, uid: string, like: boolean) {
 }
 
 
-/**
- * Fetches up to `max` puzzles for the Browse page:
- * - Pinned first, then newest.
- * - No illegal `in` filters; works even if `visibility` is missing.
- * - Falls back to unordered fetch if composite index/field is missing.
- * - Normalizes difficulty to "Easy" | "Medium" | "Hard".
- */
+/* ------------------------------------------------------------------ */
+/* Browse grid data loader                                             */
+/* ------------------------------------------------------------------ */
+
 export async function fetchBrowsePuzzles(max = 60) {
-  // Helper to convert "medium" -> "Medium" (capitalized) safely.
   const toTitle = (s: string) => (s ? s[0].toUpperCase() + s.slice(1).toLowerCase() : s);
 
-  // Map a Firestore document snapshot to a plain object the UI can use.
   const mapDoc = (d: any) => {
     const x = d.data() as any;
-
-    // `createdBy` could be stored as an object or a string; normalize to a displayable string.
     const createdBy =
       typeof x?.createdBy === "object"
         ? x.createdBy.displayName ?? x.createdBy.uid ?? "Unknown"
         : x?.createdBy ?? "Unknown";
-
-    console.log("puzzle data", x)
-
     return {
       id: d.id,
       title: x.title ?? "Untitled",
@@ -335,18 +288,38 @@ export async function fetchBrowsePuzzles(max = 60) {
   };
 
   try {
-    // Preferred ordered query:
-    // - First sort by isPinned (true first), then by createdAt (newest first).
-    // Note: adding more filters may require Firestore composite indexes.
     const qRef = query(col.puzzles(), orderBy("isPinned", "desc"), orderBy("createdAt", "desc"), limit(max));
-
-    // Run the query and map results into UI-friendly objects.
     const snap = await getDocs(qRef);
     return snap.docs.map(mapDoc);
   } catch (err) {
-    // If the ordered query fails (e.g., missing index/field), fall back to a simple fetch.
     console.warn("browse ordered query failed; falling back:", err);
     const snap = await getDocs(col.puzzles());
     return snap.docs.slice(0, max).map(mapDoc);
   }
+}
+
+
+/* ------------------------------------------------------------------ */
+/* Activity feed helpers                                               */
+/* ------------------------------------------------------------------ */
+
+// Live feed with snapshot listener
+export function subscribeActivityFeed(cb: (items: { id: string } & ActivityDoc) => void, max = 20) {
+  const qRef = query(col.activity(), orderBy("createdAt", "desc"), limit(max));
+  return onSnapshot(qRef, (snap) => {
+    snap.docChanges().forEach((change) => {
+      cb({ id: change.doc.id, ...(change.doc.data() as ActivityDoc) });
+    });
+  });
+}
+
+// One-time fetch with pagination support
+export async function fetchActivityPage(max = 20, cursor?: any) {
+  let qRef = query(col.activity(), orderBy("createdAt", "desc"), limit(max));
+  if (cursor) qRef = query(col.activity(), orderBy("createdAt", "desc"), startAfter(cursor), limit(max));
+  const snap = await getDocs(qRef);
+  return {
+    docs: snap.docs.map((d) => ({ id: d.id, ...d.data() } as { id: string } & ActivityDoc)),
+    last: snap.docs[snap.docs.length - 1],
+  };
 }
