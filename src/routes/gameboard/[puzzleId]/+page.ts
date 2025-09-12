@@ -1,13 +1,19 @@
 import type { PageLoad } from './$types';
 import { error } from '@sveltejs/kit';
-import { getPuzzleById } from '$lib/data/puzzles';
+import { fetchPuzzle } from '$lib/firebase';
 
-export const load: PageLoad = ({ params }) => {
-  const id = Number(params.puzzleId);       // e.g. "/gameboard/5" -> 5
-  const puzzle = getPuzzleById(id);
+export const load: PageLoad = async ({ params }) => {
+  const id = params.puzzleId;              // must match [puzzleId] exactly
+  if (!id) throw error(400, 'Missing puzzleId');
+
+  const puzzle = await fetchPuzzle(id);    // returns engine-normalized shape
   if (!puzzle) throw error(404, 'Puzzle not found');
-  return { puzzle };
+
+  return { id, puzzle };
 };
+
+
+
 
 
 

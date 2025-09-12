@@ -171,10 +171,49 @@ export async function fetchPublicPuzzles(max = 20) {
   return snap.docs.map((d) => ({ id: d.id, ...d.data() } as { id: string } & PuzzleDoc));
 }
 
+
+// Fetch a single puzzle by its document ID.
+// Returns a typed object (including the `id`) if it exists, otherwise `null`.
+// src/lib/firebase.ts
+
+// Fetch a single puzzle by its document ID and normalize to the GameBoard engine shape.
+
 export async function fetchPuzzle(id: string) {
   const snap = await getDoc(ref.puzzle(id));
-  return snap.exists() ? ({ id: snap.id, ...snap.data() } as { id: string } & PuzzleDoc) : null;
+  if (!snap.exists()) return null;
+
+  const x: any = snap.data();
+  const groups = ["A", "B", "C", "D"] as const;
+  const words: { id: string; text: string; groupId: "A" | "B" | "C" | "D" }[] = [];
+
+  // Preferred: build from categories[0..3].words[0..3]
+  if (Array.isArray(x?.categories) && x.categories.length) {
+    x.categories.slice(0, 4).forEach((cat: any, gi: number) => {
+      const gid = groups[gi]!;
+      (cat?.words ?? []).slice(0, 4).forEach((w: any, wi: number) => {
+        words.push({ id: `${gid}${wi + 1}`, text: String(w ?? ""), groupId: gid });
+      });
+    });
+  }
+
+  // Fallback: use wordsFlat (assumes 16 items, 4 per group)
+  if (!words.length && Array.isArray(x?.wordsFlat) && x.wordsFlat.length >= 16) {
+    for (let i = 0; i < 16; i++) {
+      const gid = groups[Math.floor(i / 4)]!;
+      words.push({ id: `${gid}${(i % 4) + 1}`, text: String(x.wordsFlat[i] ?? ""), groupId: gid });
+    }
+  }
+
+  return {
+    id: snap.id,
+    title: x?.title ?? "Untitled",
+    description: x?.description ?? "",
+    words,
+  };
 }
+
+// Create or update (merge) a user document based on the currently signed-in Auth user.
+// Initializes sensible defaults for settings/stats/pinned on first sign-in.
 
 export async function upsertUser(u: User) {
   const payload: UserDoc = {

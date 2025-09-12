@@ -296,19 +296,23 @@
 
 
   <!-- Grid -->
-  <div class="grid grid-cols-4 gap-2 w-full max-w-[680px] px-3 sm:px-0">
-    {#each order as id (id)}
-      {#key id}
-        <PuzzleCard
-          text={(words.find(w => w.id===id)?.text) ?? ""}
-          disabled={solved.includes(words.find(w => w.id===id)?.groupId as any)}
-          selected={selection.includes(id)}
-          shaking={shaking && selection.includes(id)}
-          on:click={() => toggleSelect(id)}
-        />
-      {/key}
-    {/each}
-  </div>
+<div class="grid grid-cols-4 gap-2 w-full max-w-[680px] px-3 sm:px-0">
+  {#each order as id (id)}
+    {@const w = words.find((w) => w.id === id)}
+    {#if w}
+      <PuzzleCard
+        text={w.text}
+        wordId={id}
+        selected={selection.includes(id)}
+        locked={solved.includes(w.groupId)}
+        label={groupName(w.groupId)}
+        on:toggle={(e) => toggleSelect(e.detail.wordId)}
+      />
+    {/if}
+  {/each}
+</div>
+
+
 
   <!-- Completion Ring -->
   {#if showRing}

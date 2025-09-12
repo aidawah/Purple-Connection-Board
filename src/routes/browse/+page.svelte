@@ -160,13 +160,15 @@
             </div>
 
             <a
-              href={`/gameboard/${puzzle.id}`}
-              data-sveltekit-preload-data="hover"
-              data-sveltekit-preload-code="hover"
-              class="rounded-md bg-[color:var(--brand)] px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:brightness-95 focus:outline-none focus:ring-2 focus:ring-[color:var(--brand)]/40"
-            >
-              Play Puzzle
-            </a>
+  href={`/gameboard/${encodeURIComponent(puzzle.id)}`}
+  on:click={() => console.log('Play click →', `/gameboard/${puzzle.id}`)}
+  data-sveltekit-preload-data="hover"
+  data-sveltekit-preload-code="hover"
+  class="rounded-md bg-[color:var(--brand)] px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:brightness-95 focus:outline-none focus:ring-2 focus:ring-[color:var(--brand)]/40"
+>
+  Play Puzzle
+</a>
+
           </div>
         </div>
       </div>
