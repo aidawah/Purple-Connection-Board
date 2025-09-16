@@ -1,22 +1,17 @@
+<!-- src/lib/components/GameBoard.svelte -->
 <script lang="ts">
   import { onMount, tick, createEventDispatcher } from "svelte";
   import type { Puzzle as DataPuzzle } from "$lib/data/puzzles";
   import type { Puzzle } from "$lib/types";
-  import { shuffled } from "$lib/gameLogic"; // ← no groupName import
+  import { shuffled } from "$lib/gameLogic"; // ← keep your shuffle; no groupName
   import PuzzleCard from "$lib/components/PuzzleCard.svelte";
   import CompletionRing from "$lib/effects/CompletionRing.svelte";
 
   // ── Props ────────────────────────────────────────────────────────────────────
-  /** Optional puzzle id for analytics/events */
   export let puzzleId: string | number | null = null;
-  /** Accepts either engine-shape Puzzle or datastore shape and adapts */
   export let puzzle: Puzzle | null = null;
-  /** Initial shuffle seed */
   export let initialSeed: number = 42;
 
-  /** Old-board resume support (merged from OldGameBoard.svelte).
-   *  If provided, we resume grid order / selections while still using the new visuals.
-   */
   export let resumeState:
     | {
         order?: number[];
@@ -27,20 +22,15 @@
       }
     | null = null;
 
-  /** UI switches (from old board), still respected here */
-  export let showControls: boolean = true; // toolbars/buttons visible
+  export let showControls: boolean = true;
   export let brandSrc: string = "/HS-LOGO.png";
-  export let showBrand: boolean | undefined = undefined; // default derives from showControls
+  export let showBrand: boolean | undefined = undefined;
   $: showBrandEffective = (showBrand ?? showControls) && !!brandSrc;
 
-  /** Effects */
-  // Fireworks removed by request. Keep completion ring and subtle transitions.
   export let celebrateOnComplete: boolean = true;
-
-  /** Debug */
   export let DEBUG = false;
 
-  // ── Events (union of new + old) ─────────────────────────────────────────────
+  // ── Events ──────────────────────────────────────────────────────────────────
   const dispatch = createEventDispatcher<{
     complete: void;
     wrong: void;
@@ -49,9 +39,7 @@
     loaded: { puzzleId: string | number; title: string };
     error: { message: string };
     solve: { groupId: "A" | "B" | "C" | "D"; name: string };
-
-    // old compatibility events
-    progress: number[]; // selected SI indices
+    progress: number[];
     progressDetail: { si: number[]; orig: number[]; words: string[] };
     state: {
       order: number[];
@@ -67,95 +55,111 @@
   let loading = true;
   let err: string | null = null;
 
-  // engine state
-  let order: string[] = [];          // array of word ids in grid order
-  let selection: string[] = [];      // selected word ids (by id)
-  let solved: Array<"A" | "B" | "C" | "D"> = [];
-  let showRing = false;
-
-  // toolbar presence (for slot detection)
-  // @ts-ignore
-  const hasGridSlot: boolean = !!($$slots?.grid);
-  // @ts-ignore
-  const hasToolbarSlot: boolean = !!($$slots?.toolbar);
-
-  // ── Helpers: shape adaptation ───────────────────────────────────────────────
-  type EngineWord = { id: string; text: string; groupId: "A"|"B"|"C"|"D" };
+  type GID = "A" | "B" | "C" | "D";
+  type EngineWord = { id: string; text: string; groupId: GID };
   type EnginePuzzle = {
     id?: string | number;
     title: string;
     words: EngineWord[];
+    categories?: Array<{ title?: string; name?: string; words?: string[] }>;
   };
 
-  // Require presence (not truthiness) of fields so blank text is okay
+  let order: string[] = [];
+  let selection: string[] = [];
+  let solved: Array<GID> = [];
+  let shaking = false;
+  let showRing = false;
+  let resolving = false;
+  let justSolvedIds: string[] = [];
+
+  const RESOLVE_WRONG_MS = 450;
+  const RESOLVE_CORRECT_MS = 350;
+
+  // ── Shape adaptation (preserve categories) ──────────────────────────────────
   function isEngineShape(p: any): p is EnginePuzzle {
     const w0 = p?.words?.[0];
     return Array.isArray(p?.words) && !!w0 && ("id" in w0) && ("groupId" in w0) && ("text" in w0);
   }
 
   function adaptFromDataStore(p: DataPuzzle): EnginePuzzle {
-    const words: EngineWord[] = p.words.map((w, i) => ({
-      id: w.id ?? String(i),
-      text: w.text ?? w.word ?? "",
-      // coerce to A-D safely
-      groupId: (w.groupId ?? ["A","B","C","D"][i % 4]) as "A"|"B"|"C"|"D"
+    const words: EngineWord[] = p.words.map((w: any, i: number) => ({
+      id: w?.id ?? String(i),
+      text: w?.text ?? w?.word ?? "",
+      groupId: (w?.groupId ?? ["A", "B", "C", "D"][i % 4]) as GID
     }));
-    return { id: p.id, title: p.title ?? "Untitled", words };
+    const categories = Array.isArray((p as any)?.categories) ? (p as any).categories : undefined;
+    return { id: (p as any).id, title: (p as any).title ?? "Untitled", words, categories };
   }
 
-  // Reactive adaptation for incoming puzzle
   $: if (puzzle && !isEngineShape(puzzle)) {
     puzzle = adaptFromDataStore(puzzle as unknown as DataPuzzle);
   }
 
-  // convenience lookups based on the current puzzle
+  // ── Lookups ─────────────────────────────────────────────────────────────────
   $: words = (puzzle?.words ?? []) as EngineWord[];
-  $: groupsMap = words.reduce<Record<"A"|"B"|"C"|"D", EngineWord[]>>((acc, w) => {
-    (acc[w.groupId] ??= []).push(w);
-    return acc;
-  }, { A:[], B:[], C:[], D:[] } as any);
+  $: allIds = words.map((w) => w.id);
+  function siToOrig(si: number): number { const id = order[si]; return allIds.indexOf(id); }
 
-  // ids
-  $: allIds = words.map(w => w.id);
-
-  // si (slot index) -> orig index mapping using order of allIds
-  function siToOrig(si: number): number {
-    const id = order[si];
-    return allIds.indexOf(id);
+  // Build a robust map from groupId → category title by matching the 4 words
+  function normalize(s: any) {
+    return (s ?? "").toString().trim().toLowerCase();
   }
 
-  // Map Firestore/preview categories into a simple titles array once.
-  $: catTitles = Array.isArray((puzzle as any)?.categories)
-    ? (puzzle as any).categories.map((c: any) =>
-        (c?.title ?? c?.name ?? "").toString().trim()
-      )
-    : [];
+  function buildTitleByGroup(): Record<GID, string> {
+    const out: Record<GID, string> = { A: "", B: "", C: "", D: "" };
+    const cats: Array<{ title?: string; name?: string; words?: string[] }> =
+      Array.isArray((puzzle as any)?.categories) ? (puzzle as any).categories : [];
 
-  // Index map A/B/C/D → 0/1/2/3
-  const GI = { A: 0, B: 1, C: 2, D: 3 } as const;
+    if (!cats.length) return out;
 
-  // Title resolver (strictly Firestore/preview titles; no ABCD fallback)
+    // Set of each category's words (normalized)
+    const catWordSets = cats.map((c) => new Set((c?.words ?? []).map(normalize)));
+
+    // For each groupId, collect the 4 word texts and find the category whose words contain them
+    (["A", "B", "C", "D"] as GID[]).forEach((gid, idx) => {
+      const groupWords = words.filter((w) => w.groupId === gid).map((w) => normalize(w.text));
+      if (groupWords.length === 0) return;
+
+      // best match: category that contains all 4; fallback: highest overlap
+      let bestIdx = -1;
+      let bestScore = -1;
+      catWordSets.forEach((set, ci) => {
+        const score = groupWords.reduce((acc, w) => acc + (set.has(w) ? 1 : 0), 0);
+        if (score > bestScore) { bestScore = score; bestIdx = ci; }
+      });
+
+      if (bestIdx >= 0 && bestScore > 0) {
+        const title = (cats[bestIdx]?.title ?? cats[bestIdx]?.name ?? "").toString().trim();
+        out[gid] = title; // if empty in Firestore, this will intentionally be ""
+      }
+    });
+
+    return out;
+  }
+
+  // Build title map reactively whenever puzzle/words/categories change
+  $: titleByGid = buildTitleByGroup();
+
+  // Convenience: everything else can ask here
   function titleFor(gid: GID): string {
-    return catTitles[GI[gid]] ?? "";
+    return titleByGid[gid] ?? "";
   }
 
-  // Emit legacy/new state for external listeners
+  // ── Emit state to listeners ─────────────────────────────────────────────────
   function emitNow() {
-    // Translate current selection to both si and orig + text for compatibility
-    const si = selection.map(id => order.indexOf(id)).filter(i => i >= 0);
+    const si = selection.map((id) => order.indexOf(id)).filter((i) => i >= 0);
     const orig = si.map(siToOrig);
     const wordsSel = orig.map((oi) => words[oi]?.text ?? "");
 
     dispatch("progress", si);
     dispatch("progressDetail", { si, orig, words: wordsSel });
 
-    // group completion mask (by original order)
     const solvedByOrig = allIds.map((id) => {
       const idx = allIds.indexOf(id);
-      const gid = words[idx]?.groupId;
-      return solved.includes(gid as any);
+      const gid = words[idx]?.groupId as GID;
+      return solved.includes(gid);
     });
-    const solvedByGroup = (["A","B","C","D"] as const).map(g => solved.includes(g));
+    const solvedByGroup = (["A", "B", "C", "D"] as const).map((g) => solved.includes(g));
 
     dispatch("state", {
       order: order.map((id) => allIds.indexOf(id)),
@@ -167,23 +171,21 @@
     });
   }
 
-  // ── Initialization / Resume ─────────────────────────────────────────────────
+  // ── Init / Resume ───────────────────────────────────────────────────────────
   async function hydrate() {
-    loading = true; err = null;
+    loading = true;
+    err = null;
     try {
       if (!puzzle) throw new Error("No puzzle provided");
-      // Build order either from resume or a shuffled seed (new visual keeps)
-      if (resumeState?.order?.length === words.length) {
-        // resume using original-index mapping -> convert to ids
+
+      if (resumeState?.order?.length === allIds.length) {
         order = resumeState.order.map((orig) => allIds[orig]);
       } else {
-        const seed = initialSeed;
         const ids = [...allIds];
-        const idxs = shuffled(ids.map((_, i) => i), seed);
-        order = idxs.map(i => ids[i]);
+        const idxs = shuffled(ids.map((_, i) => i), initialSeed);
+        order = idxs.map((i) => ids[i]);
       }
 
-      // resume selection (prefer words array)
       if (resumeState?.selectedWords?.length) {
         selection = resumeState.selectedWords
           .map((txt) => words.find((w) => w.text === txt)?.id)
@@ -196,13 +198,12 @@
         selection = [];
       }
 
-      // resume solved flags (per-orig)
       if (resumeState?.solvedByOrig?.length === allIds.length) {
-        const solvedGroups = new Set<"A"|"B"|"C"|"D">();
+        const set = new Set<GID>();
         resumeState.solvedByOrig.forEach((flag, i) => {
-          if (flag) solvedGroups.add(words[i]?.groupId);
+          if (flag) set.add((words[i]?.groupId)! as GID);
         });
-        solved = Array.from(solvedGroups);
+        solved = Array.from(set);
       } else {
         solved = [];
       }
@@ -220,63 +221,82 @@
   }
 
   onMount(hydrate);
-  $: if (puzzle) { /* re-hydrate if a different puzzle arrives */ }
 
   // ── Actions ────────────────────────────────────────────────────────────────
   function toggleSelect(id: string) {
+    if (resolving) return;
+
     if (selection.includes(id)) {
-      selection = selection.filter(x => x !== id);
-    } else if (selection.length < 4) {
-      selection = [...selection, id];
-      if (selection.length === 4) {
-        checkSelection();
-      } else {
-        emitNow();
-      }
+      selection = selection.filter((x) => x !== id);
+      emitNow();
+      return;
+    }
+    if (selection.length >= 4) return;
+
+    selection = [...selection, id];
+
+    if (selection.length === 4) {
+      checkSelection();
     } else {
-      // replace oldest to keep UX snappy
-      selection = [...selection.slice(1), id];
       emitNow();
     }
   }
 
   function clearSelection() {
+    if (resolving) return;
     const hadSolved = solved.length > 0;
     selection = [];
-    dispatch("clear", { clearedSolved });
+    shaking = false;
+    dispatch("clear", { clearedSolved: hadSolved });
     emitNow();
   }
 
   function shuffle() {
+    if (resolving) return;
     const ids = [...order];
-    const idxs = shuffled(ids.map((_, i) => i), Math.floor(Math.random()*100000));
-    order = idxs.map(i => ids[i]);
+    const idxs = shuffled(ids.map((_, i) => i), Math.floor(Math.random() * 100000));
+    order = idxs.map((i) => ids[i]);
     selection = [];
     shaking = false;
+    justSolvedIds = [];
     dispatch("shuffle");
     emitNow();
   }
 
-  async function commitSelection() {
+  function checkSelection() {
     if (!puzzle) return;
-    const selected = selection.map(id => words.find(w => w.id === id)!);
-    const groupId = selected[0].groupId;
-    const allSame = selected.every(w => w.groupId === groupId);
+    resolving = true;
+
+    const picked = selection.map((id) => words.find((w) => w.id === id)!);
+    const groupId = picked[0].groupId as GID;
+    const allSame = picked.every((w) => w.groupId === groupId);
+
     if (allSame) {
       // mark group solved
       solved = [...new Set([...solved, groupId])];
-      dispatch("solve", { groupId, name: groupName(groupId) });
-      selection = [];
-      if (solved.length === 4) {
-        dispatch("complete");
-        if (celebrateOnComplete) {
-          showRing = true;
-          setTimeout(() => (showRing = false), 1600);
+      justSolvedIds = [...selection];
+
+      // Title strictly from Firestore categories by word matching
+      const name = titleFor(groupId);
+      dispatch("solve", { groupId, name });
+
+      emitNow();
+
+      setTimeout(() => {
+        selection = [];
+        justSolvedIds = [];
+        if (solved.length === 4) {
+          dispatch("complete");
+          if (celebrateOnComplete) {
+            showRing = true;
+            setTimeout(() => (showRing = false), 1600);
+          }
         }
-      }
+        resolving = false;
+        emitNow();
+      }, RESOLVE_CORRECT_MS);
     } else {
       shaking = true;
-      setTimeout(() => (shaking = false), 450);
       dispatch("wrong");
       emitNow();
       setTimeout(() => {
@@ -291,49 +311,80 @@
 
 <!-- ── Layout ───────────────────────────────────────────────────────────────── -->
 <div class="w-full flex flex-col items-center gap-4">
-  <!-- Brand (optional) -->
   {#if showBrandEffective}
     <img src={brandSrc} alt="brand" class="h-8 opacity-80 mt-2" />
   {/if}
 
-<!-- Toolbar (new look, Tailwind only) -->
-{#if showControls}
-  <div class="flex items-center justify-center gap-3">
-    <button
-      class="rounded-xl px-4 py-2 border border-zinc-300 bg-white hover:bg-zinc-50 text-zinc-800 shadow-sm transition active:scale-[.98]"
-      on:click={shuffle}
-      aria-label="Shuffle"
-    >Shuffle</button>
+  {#if showControls}
+    <div class="flex items-center justify-center gap-3">
+      <button
+        class="rounded-xl px-4 py-2 border border-zinc-300 bg-white hover:bg-zinc-50 text-zinc-800 shadow-sm transition active:scale-[.98]"
+        on:click={shuffle}
+        aria-label="Shuffle"
+      >Shuffle</button>
 
-    <button
-      class="rounded-xl px-4 py-2 border border-zinc-300 bg-white hover:bg-zinc-50 text-zinc-800 shadow-sm transition active:scale-[.98]"
-      on:click={clearSelection}
-      aria-label="Clear"
-    >Clear</button>
+      <button
+        class="rounded-xl px-4 py-2 border border-zinc-300 bg-white hover:bg-zinc-50 text-zinc-800 shadow-sm transition active:scale-[.98]"
+        on:click={clearSelection}
+        aria-label="Clear"
+      >Clear</button>
+    </div>
+  {/if}
+
+  <!-- Grid (applies shake on wrong via class binding) -->
+  <div
+    class="grid grid-cols-4 gap-2 w-full max-w-[680px] px-3 sm:px-0"
+    class:animate-puzzle-shake={shaking}
+  >
+    {#each order as id (id)}
+      {@const w = words.find((w) => w.id === id)}
+      {#if w}
+        <!-- Flip wrapper lives in GameBoard (kept exactly as before) -->
+        <button
+          type="button"
+          on:click={() => toggleSelect(id)}
+          class="relative w-full h-full rounded-xl focus:outline-none group
+                 [perspective:1000px] select-none"
+          aria-pressed={selection.includes(id)}
+          disabled={resolving || solved.includes(w.groupId)}
+          data-locked={solved.includes(w.groupId)}
+          data-selected={selection.includes(id)}
+        >
+          <div
+            class="relative w-full h-[70px] sm:h-[92px] md:h-[100px]
+                   transition-transform duration-300
+                   [transform-style:preserve-3d]
+                   group-data-[locked=true]:[transform:rotateY(180deg)]"
+          >
+            <!-- FRONT: PuzzleCard (we pass the resolved title as its label too) -->
+            <div class="absolute inset-0 [backface-visibility:hidden]">
+              <PuzzleCard
+                text={w.text}
+                wordId={id}
+                selected={selection.includes(id)}
+                locked={solved.includes(w.groupId)}
+                label={titleFor(w.groupId)}
+                disabled={resolving}
+              />
+            </div>
+
+            <!-- BACK: teal with Firestore category title -->
+            <div
+              class="absolute inset-0 [backface-visibility:hidden]
+                     [transform:rotateY(180deg)]
+                     rounded-xl border border-teal-600
+                     bg-teal-500 text-white
+                     grid place-items-center px-2
+                     text-sm sm:text-base font-semibold"
+            >
+              {titleFor(w.groupId)}
+            </div>
+          </div>
+        </button>
+      {/if}
+    {/each}
   </div>
-{/if}
 
-
-  <!-- Grid -->
-<div class="grid grid-cols-4 gap-2 w-full max-w-[680px] px-3 sm:px-0">
-  {#each order as id (id)}
-    {@const w = words.find((w) => w.id === id)}
-    {#if w}
-      <PuzzleCard
-        text={w.text}
-        wordId={id}
-        selected={selection.includes(id)}
-        locked={solved.includes(w.groupId)}
-        label={groupName(w.groupId)}
-        on:toggle={(e) => toggleSelect(e.detail.wordId)}
-      />
-    {/if}
-  {/each}
-</div>
-
-
-
-  <!-- Completion Ring -->
   {#if showRing}
     <div class="mt-4">
       <CompletionRing size={88} />
@@ -341,10 +392,16 @@
   {/if}
 
   {#if DEBUG}
-    <pre class="text-xs text-zinc-500 mt-4">{JSON.stringify({ order, selection, solved }, null, 2)}</pre>
+    <pre class="text-xs text-zinc-500 mt-4">
+{JSON.stringify({
+  order, selection, solved, shaking, resolving,
+  titleByGid,
+  categories: (puzzle as any)?.categories
+}, null, 2)}
+    </pre>
   {/if}
 </div>
 
 <style>
-  /* All visuals are Tailwind classes; keeping style tag minimal for Svelte scoping if needed */
+  /* Visuals use Tailwind (including arbitrary properties). No scoped styles needed. */
 </style>
