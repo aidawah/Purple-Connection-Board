@@ -12,17 +12,39 @@ export function shuffled<T>(arr: T[], seed = Date.now()): T[] {
   return out;
 }
 
-/** Returns a readable name for a group; falls back to "Group A/B/C/D". */
-export function groupName(_puzzle: Puzzle, gid: GroupId): string {
-  // If you later add category names to your puzzle model, map them here.
-  return gid === "A" ? "Group A" :
-         gid === "B" ? "Group B" :
-         gid === "C" ? "Group C" :
-                       "Group D";
+/**
+ * Returns a readable name for a group.
+ * Compatible calls:
+ *   - groupName("A")
+ *   - groupName(puzzle, "A")
+ * Prefers puzzle.categories[gid] if available; falls back to "Group A/B/C/D".
+ */
+export function groupName(puzOrGid: Puzzle | GroupId, maybeGid?: GroupId): string {
+  const gid = (typeof puzOrGid === "string" ? puzOrGid : maybeGid) as GroupId | undefined;
+  if (!gid) return "Unknown";
+
+  const p = (typeof puzOrGid === "string" ? undefined : (puzOrGid as any));
+
+  // If categories are present, use them (support {title} or {name})
+  if (p?.categories && Array.isArray(p.categories)) {
+    const idx = gid.charCodeAt(0) - 65; // A=0, B=1, C=2, D=3
+    const cat = p.categories[idx];
+    const label = (cat?.title ?? cat?.name ?? "").trim();
+    if (label) return label;
+  }
+
+  // Fallback generic labels
+  return gid === "A" ? "Group A"
+       : gid === "B" ? "Group B"
+       : gid === "C" ? "Group C"
+       :               "Group D";
 }
 
 /** Check if the 4 selected ids are exactly one group of four. */
-export function isGroupCorrect(puzzle: Puzzle, selection: string[]): { ok: boolean; groupId?: GroupId } {
+export function isGroupCorrect(
+  puzzle: Puzzle,
+  selection: string[]
+): { ok: boolean; groupId?: GroupId } {
   if (selection.length !== 4) return { ok: false };
   const ids = new Set(selection);
   const groups = new Set<GroupId>();
@@ -35,3 +57,5 @@ export function isGroupCorrect(puzzle: Puzzle, selection: string[]): { ok: boole
   const ok = expectedIds.every(id => ids.has(id));
   return ok ? { ok: true, groupId: gid } : { ok: false };
 }
+
+
