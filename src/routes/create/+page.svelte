@@ -3,13 +3,15 @@
   import type { Puzzle } from "$lib/types";
   import { onMount } from "svelte";
   import { browser } from "$app/environment";
+  import { goto } from "$app/navigation";
+  import { collection, addDoc, serverTimestamp } from "firebase/firestore";
 
-  // Theme & bounds
-  const BRAND = "#14b8a6"; // teal
+  // ---- Theme & bounds ----
+  const BRAND = "#14b8a6";
   const MIN_COUNT = 4;
   const MAX_COUNT = 8;
 
-  // State
+  // ---- State ----
   let puzzleId = "";
   let title = "";
   let categoryCount = 4;
@@ -17,14 +19,14 @@
   type Cat = { name: string; words: string[] };
   let categories: Cat[] = [];
 
-  // UI
+  // ---- UI ----
   let generating = false;
   let saving = false;
   let statusMsg = "";
   let statusType: "info" | "success" | "error" = "info";
   let showPreview = true;
 
-  // Tailwind class tokens (dark-ready)
+  // ---- Tailwind tokens ----
   const INPUT =
     "h-11 w-full rounded-lg border border-zinc-300 bg-white px-3 text-[clamp(12px,1.05vw,16px)] leading-[1.2] text-zinc-900 placeholder-zinc-500 outline-none focus:ring-2 focus:ring-[color:var(--brand)] focus:border-[color:var(--brand)] dark:bg-zinc-900 dark:text-zinc-100 dark:border-zinc-700";
   const LABEL = "text-sm font-medium text-zinc-700 dark:text-zinc-200";
@@ -36,7 +38,7 @@
     "rounded-xl px-4 py-2 border border-zinc-300 bg-white hover:bg-zinc-50 text-zinc-800 shadow-sm transition active:scale-[.98] dark:bg-zinc-900 dark:text-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800";
   const CAPTION = "text-xs text-zinc-500 dark:text-zinc-400";
 
-  // Local draft persistence
+  // ---- Local draft ----
   const ls = {
     get(key: string) { if (!browser) return null; try { return localStorage.getItem(key); } catch { return null; } },
     set(key: string, v: string) { if (!browser) return; try { localStorage.setItem(key, v); } catch {} },
@@ -44,6 +46,7 @@
   const draftKey = () => "pcg:create:draft";
 
   onMount(() => {
+    if (!browser) return;
     const url = new URL(window.location.href);
     puzzleId = url.searchParams.get("id") ?? "";
 
@@ -62,13 +65,13 @@
 
   $: { if (browser) ls.set(draftKey(), JSON.stringify({ title, categoryCount, wordCount, categories })); }
 
-  // Keep N x N when sliders change
+  // ---- Grid sync ----
   $: if (categories.length !== categoryCount) {
     const next = Array.from({ length: categoryCount }, (_, i) => categories[i] ?? { name: "", words: [] as string[] });
     next.forEach((c) => (c.words = Array.from({ length: wordCount }, (_, j) => c.words?.[j] ?? "")));
     categories = next;
   }
-  $: if (categories[0]?.words?.length !== wordCount) {
+  $: if ((categories[0]?.words?.length ?? 0) !== wordCount) {
     categories = categories.map((c) => ({ ...c, words: Array.from({ length: wordCount }, (_, j) => c.words?.[j] ?? "") }));
   }
 
@@ -80,9 +83,10 @@
     }));
   }
 
-  // Helpers for merging words
+  // ---- Helpers for generation ----
   type ApiCategory = { name: string; words: string[] };
-  function nonEmptyWords(arr: string[]) { return arr.filter((w) => (w ?? "").trim().length > 0); }
+  const nonEmptyWords = (arr: string[]) => arr.filter((w) => (w ?? "").trim().length > 0);
+
   function mergeWords(existing: string[], incoming: string[], targetLen: number) {
     const filled = [...existing];
     const existingSet = new Set(nonEmptyWords(existing).map((w) => w.toLowerCase()));
@@ -99,7 +103,7 @@
     return filled.slice(0, targetLen).map((w) => w ?? "");
   }
 
-  // API calls to your /api/generate
+  // ---- Generate: categories ----
   async function generateCategories() {
     generating = true; status("Generating categories…", "info");
     try {
@@ -118,10 +122,13 @@
       const res = await fetch("/api/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        // credentials not required for same-origin, but won’t hurt:
+        credentials: "same-origin",
         body: JSON.stringify(payload)
       });
-      if (!res.ok) throw new Error(await res.text());
-      const data: { title?: string; categories?: ApiCategory[] } = await res.json();
+
+      if (!res.ok) throw new Error(await res.text().catch(() => res.statusText));
+      const data: { title?: string; categories?: ApiCategory[] } = await res.json().catch(() => ({} as any));
 
       const names = (data.categories ?? []).map((c) => (c?.name ?? "").trim());
       categories = Array.from({ length: categoryCount }, (_, i) => ({
@@ -132,12 +139,14 @@
       if ((data.title ?? "").trim()) title = data.title!.trim();
       status("Categories generated.", "success");
     } catch (e: any) {
+      console.error("generateCategories error:", e);
       status(e?.message ?? "Failed to generate categories.", "error");
     } finally {
       generating = false;
     }
   }
 
+  // ---- Generate: words ----
   async function generateWords() {
     generating = true; status("Generating words…", "info");
     try {
@@ -153,10 +162,11 @@
       const res = await fetch("/api/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
         body: JSON.stringify({ title, categoryCount, wordCount, mode: "missing", categories: inCats })
       });
-      if (!res.ok) throw new Error(await res.text());
-      const data: { categories?: ApiCategory[] } = await res.json();
+      if (!res.ok) throw new Error(await res.text().catch(() => res.statusText));
+      const data: { categories?: ApiCategory[] } = await res.json().catch(() => ({} as any));
 
       const byName = new Map<string, string[]>();
       (data.categories ?? []).forEach((c) => byName.set((c?.name ?? "").trim(), Array.isArray(c?.words) ? c.words : []));
@@ -168,64 +178,63 @@
 
       status("Words generated.", "success");
     } catch (e: any) {
+      console.error("generateWords error:", e);
       status(e?.message ?? "Failed to generate words.", "error");
     } finally {
       generating = false;
     }
   }
 
-  // Save / Play / Clear
-  async function save() {
+  // ---- Save & Play ----
+  async function saveAndPlay() {
     saving = true; status("Saving…", "info");
     try {
       if (!browser) throw new Error("Cannot save during SSR");
-      const fb = await import("$lib/firebase");
-      const { savePuzzle } = fb as any;
 
-      const payload: any = {
-        title,
-        words: categories.flatMap((c, ci) =>
-          c.words.map((w) => ({
-            id: crypto.randomUUID(),
-            text: (w || "").trim(),
-            groupId: ["A", "B", "C", "D"][ci] as "A" | "B" | "C" | "D"
-          }))
-        )
+      // Keep validation minimal so it doesn't block generation buttons:
+      if (!title.trim()) throw new Error("Please enter a title.");
+      const anyEmpty = categories.some((c) => !c.name.trim() || c.words.some((w) => !w.trim()));
+      if (anyEmpty) throw new Error("Please complete all category names and every word box.");
+
+      // Lazy-import firebase app to avoid SSR/window issues
+      const fb = await import("$lib/firebase");
+      const { db, auth } = fb as any;
+
+      const uid = auth?.currentUser?.uid ?? null;
+
+      const payload = {
+        title: title.trim(),
+        categories: categories.map((c) => ({
+          title: c.name.trim(),
+          words: c.words.map((w) => w.trim())
+        })),
+        size: `${categoryCount}x${wordCount}`,
+        createdAt: serverTimestamp(),
+        author: uid ? {
+          uid,
+          name: auth.currentUser.displayName ?? "",
+          email: auth.currentUser.email ?? "",
+          photoURL: auth.currentUser.photoURL ?? ""
+        } : null
       };
 
-      if (!payload.title?.trim()) throw new Error("Please enter a title.");
-      if (payload.words.some((w: any) => !w.text)) throw new Error("Please fill all words before saving.");
+      const ref = await addDoc(collection(db, "puzzles"), payload);
 
-      const id = await savePuzzle(payload);
-      const u = new URL(window.location.href);
-      u.searchParams.set("id", id);
-      history.replaceState(null, "", u.toString());
-      status("Saved!", "success");
+      status("Saved! Opening game…", "success");
+      await goto(`/${ref.id}`); // make sure /play/[id] exists and reads this doc
     } catch (e: any) {
+      console.error("saveAndPlay error:", e);
       status(e?.message ?? "Failed to save.", "error");
     } finally {
       saving = false;
     }
   }
 
-  function play() {
-    if (!browser) return;
-    const pzl: Puzzle = {
-      id: "live",
-      title,
-      words: categories.flatMap((c, ci) =>
-        c.words.map((w, wi) => ({ id: `${ci}-${wi}`, text: w, groupId: (["A", "B", "C", "D"][ci] ?? "A") as any }))
-      )
-    } as any;
-    sessionStorage.setItem("pcg:live:puzzle", JSON.stringify(pzl));
-    window.open("/play", "_blank");
-  }
-
   function clearAll() { resetGrid(); title = ""; status("Cleared.", "success"); }
 
   function status(msg: string, type: "info" | "success" | "error" = "info") {
     statusMsg = msg; statusType = type;
-    setTimeout(() => { if (statusMsg === msg) statusMsg = ""; }, 2500);
+    setTimeout(() => { if (statusMsg === msg) statusMsg = ""; }, 2600);
   }
 </script>
 
@@ -280,14 +289,15 @@
           </div>
         </div>
 
-        <!-- Primary actions (kept here for muscle memory) -->
+        <!-- Primary actions -->
         <div class="flex flex-wrap gap-3 pt-1">
           <button class={BTN_GHOST} on:click={clearAll}>Clear</button>
           <button class={BTN_GHOST} on:click={generateCategories} disabled={generating}>Generate categories</button>
           <button class={BTN_GHOST} on:click={generateWords} disabled={generating}>Generate words</button>
           <div class="flex-1"></div>
-          <button class={BTN_SOLID} on:click={save} disabled={saving}>Save</button>
-          <button class={BTN_SOLID} on:click={play}>Play</button>
+          <button class={BTN_SOLID} on:click={saveAndPlay} disabled={saving || generating}>
+            {saving ? "Saving…" : "Save & Play"}
+          </button>
         </div>
       </div>
 
@@ -309,7 +319,12 @@
       </div>
 
       {#if statusMsg}
-        <div class="text-sm" class:text-blue-600={statusType === 'info'} class:text-green-600={statusType === 'success'} class:text-red-600={statusType === 'error'}>{statusMsg}</div>
+        <div class="text-sm"
+          class:text-blue-600={statusType === 'info'}
+          class:text-green-600={statusType === 'success'}
+          class:text-red-600={statusType === 'error'}>
+          {statusMsg}
+        </div>
       {/if}
     </section>
 
@@ -318,7 +333,9 @@
       <div class="flex items-center justify-between">
         <h2 class="text-lg font-semibold text-zinc-900 dark:text-zinc-100">Live preview</h2>
         <div class="flex items-center gap-2">
-          <button class={BTN_GHOST} on:click={() => (showPreview = !showPreview)}>{showPreview ? "Hide" : "Show"}</button>
+          <button class={BTN_GHOST} on:click={() => (showPreview = !showPreview)}>
+            {showPreview ? "Hide" : "Show"}
+          </button>
         </div>
       </div>
 
@@ -338,16 +355,7 @@
             showControls={false}
             on:complete={() => console.log("Preview complete")}
           />
-
-          <!-- Secondary actions mirrored under preview (mobile-friendly) -->
-          <div class="mt-4 flex flex-wrap gap-3">
-            <button class={BTN_GHOST} on:click={clearAll}>Clear</button>
-            <button class={BTN_GHOST} on:click={generateCategories} disabled={generating}>Generate categories</button>
-            <button class={BTN_GHOST} on:click={generateWords} disabled={generating}>Generate words</button>
-            <div class="flex-1"></div>
-            <button class={BTN_SOLID} on:click={save} disabled={saving}>Save</button>
-            <button class={BTN_SOLID} on:click={play}>Play</button>
-          </div>
+          <!-- no buttons in preview -->
         </div>
       {/if}
     </section>
