@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import { browser } from '$app/environment';
   import { goto } from '$app/navigation';
 
@@ -21,17 +21,21 @@
     stats: { puzzlesCreated: number; puzzlesSolved: number; streakDays: number; };
   };
 
-  type MyPuzzle = {
-    id: string;
-    title: string;
-    description?: string;
-    category?: string;
-    difficulty?: 'Easy'|'Medium'|'Hard';
-    imageUrl?: string;
-    isPinned?: boolean;
-    solveCount?: number;
-    createdAt?: string;
-  };
+type MyPuzzle = {
+  id: string;
+  title: string;
+  description?: string;
+  category?: string;
+  difficulty?: 'Easy'|'Medium'|'Hard';
+  imageUrl?: string;
+  isPinned?: boolean;
+  solveCount?: number;
+  createdAt?: string;
+
+  // NEW (optional)
+  isPublished?: boolean;
+  status?: 'draft' | 'published';
+};
 
   // ---- state ----
   let loading = true;
@@ -67,44 +71,53 @@
   let myPuzzles: MyPuzzle[] = [];
 
   // ---- firebase (lazy) ----
-  let fb: any = null; let ffs: any = null; let auth: any = null; let db: any = null;
+  let fb: any = null;    // your $lib/firebase wrapper (if present)
+  let ffs: any = null;   // firebase/firestore
+  let auth: any = null;  // firebase/auth
+  let db: any = null;
   let currentUID: string | null = null;
+  let unsubscribeAuth: (() => void) | null = null;
 
+  const toTitle = (s: string) => (s ? s[0].toUpperCase() + s.slice(1).toLowerCase() : s);
+
+
+  //publish shit 
+
+  
   async function ensureFirebase() {
     if (!browser || !USE_FIREBASE) return;
-    if (!fb) fb = await import('$lib/firebase');                    // your wrapper
-    if (!ffs) ffs = await import('firebase/firestore');             // raw firestore helpers
-    if (!auth) auth = await import('firebase/auth');                // raw auth (for types/util)
-    db = fb?.db || fb?.getFirestore?.(fb.app);
+    if (!fb)  fb  = await import('$lib/firebase').catch(()=>null);
+    if (!ffs) ffs = await import('firebase/firestore').catch(()=>null);
+    if (!auth) auth = await import('firebase/auth').catch(()=>null);
+    db = fb?.db ?? fb?.getFirestore?.(fb?.app) ?? null;
   }
 
-  async function loadFromFirebase() {
-    if (!USE_FIREBASE || !db) { loading = false; return; }
+async function loadFromFirebase() {
+  if (!USE_FIREBASE || !db || !ffs) { loading = false; return; }
+
+  try {
+    const _auth = fb?.auth || auth?.getAuth?.();
+    const user = _auth?.currentUser;
+
+    if (!user?.uid) {
+      loading = false;
+      // goto('/signin?next=/profile'); // Optional redirect
+      return;
+    }
+
+    currentUID = user.uid;
+
+    // Prime with Auth fields
+    profile.email = user.email ?? '';
+    profile.name = user.displayName ?? '';
+    profile.photoURL = user.photoURL ?? '';
+
+    // --- profiles/{uid}
     try {
-      // Prefer your helper which already calls onAuthStateChanged under the hood
-      const _auth = fb?.auth || auth?.getAuth?.();
-      const user = _auth?.currentUser;
-
-      // If not logged in, show a very gentle prompt / or send to signin
-      if (!user?.uid) {
-        loading = false;
-        // Optional redirect: comment out if you prefer staying on page.
-        // goto('/signin?next=/profile');
-        return;
-      }
-
-      currentUID = user.uid;
-
-      // Seed with Auth fields in case profile doc is missing some parts
-      profile.email = user.email ?? '';
-      profile.name = user.displayName ?? '';
-      profile.photoURL = user.photoURL ?? '';
-
-      // --- profiles/{uid}
       const docRef = ffs.doc(db, 'profiles', currentUID);
       const snap = await ffs.getDoc(docRef);
       if (snap.exists()) {
-        const d = snap.data();
+        const d = snap.data() || {};
         profile = {
           uid: currentUID,
           name: (d.name ?? profile.name) || '',
@@ -130,118 +143,256 @@
           }
         };
       } else {
-        // If the doc doesn't exist yet, keep Auth basics and zeros.
         profile.uid = currentUID;
       }
-
-      // --- activity (recent first)
-      try {
-        const actQ = ffs.query(
-          ffs.collection(db, 'activity'),
-          ffs.where('uid', '==', currentUID),
-          ffs.orderBy('createdAt', 'desc'),
-          ffs.limit(15)
-        );
-        const actSnap = await ffs.getDocs(actQ);
-        recentActivity = actSnap.docs.map((doc: any) => {
-          const x = doc.data();
-          const when = x.createdAt?.toDate?.()?.toLocaleString?.() ?? 'recently';
-          const txt = x.type === 'puzzle_solved'
-            ? `Solved “${x.puzzleTitle ?? 'Untitled'}” ✅`
-            : x.type === 'puzzle_created'
-            ? `Created “${x.puzzleTitle ?? 'Untitled'}” 🧩`
-            : x.text ?? 'Did something';
-          return { at: when, text: txt };
-        });
-      } catch { recentActivity = []; }
-
-      // --- pinned puzzles
-      try {
-        const pinQ = ffs.query(
-          ffs.collection(db, 'puzzles'),
-          ffs.where('owner', '==', currentUID),
-          ffs.where('isPinned', '==', true),
-          ffs.limit(8)
-        );
-        const pinSnap = await ffs.getDocs(pinQ);
-        pinnedPuzzles = pinSnap.docs.map((d: any) => {
-          const x = d.data();
-          return { id: d.id, title: x.title ?? 'Untitled', difficulty: (x.difficulty ?? 'Medium') };
-        });
-      } catch { pinnedPuzzles = []; }
-
-      // --- my puzzles (most recent first)
-      try {
-        const myQ = ffs.query(
-          ffs.collection(db, 'puzzles'),
-          ffs.where('owner', '==', currentUID),
-          ffs.orderBy('createdAt', 'desc'),
-          ffs.limit(50)
-        );
-        const mySnap = await ffs.getDocs(myQ);
-        myPuzzles = mySnap.docs.map((d: any) => {
-          const x = d.data();
-          return {
-            id: d.id,
-            title: x.title ?? 'Untitled',
-            description: x.description ?? '',
-            category: x.category ?? 'General',
-            difficulty: (x.difficulty ?? 'Medium'),
-            imageUrl: x.imageUrl ?? '',
-            isPinned: !!x.isPinned,
-            solveCount: x.solveCount ?? 0,
-            createdAt: x.createdAt?.toDate?.()?.toISOString?.() ?? new Date().toISOString()
-          } as MyPuzzle;
-        });
-      } catch { myPuzzles = []; }
-
-      // --- most recently played (optional)
-      try {
-        const playsQ = ffs.query(
-          ffs.collection(db, 'plays'),
-          ffs.where('uid', '==', currentUID),
-          ffs.orderBy('updatedAt', 'desc'),
-          ffs.limit(1)
-        );
-        const playsSnap = await ffs.getDocs(playsQ);
-        const doc = playsSnap.docs[0];
-        if (doc) {
-          const x = doc.data();
-          lastPlayed = {
-            id: x.puzzleId,
-            title: x.puzzleTitle ?? 'Untitled Puzzle',
-            progress: x.progressPercent ?? undefined
-          };
-        } else {
-          lastPlayed = null;
-        }
-      } catch { lastPlayed = null; }
-
-    } catch (e) {
-      console.error(e);
-      flash = { type: 'error', text: 'Failed to load your profile.' };
-    } finally {
-      loading = false;
-      if (flash) setTimeout(()=>flash=null, 2200);
+    } catch {
+      // keep seeded profile
     }
-  }
 
-  async function saveProfile() {
-    if (!USE_FIREBASE) { flash = { type: 'info', text: 'Firebase disabled (mock save).' }; setTimeout(()=>flash=null,2200); return; }
-    if (!db || !currentUID) return;
+    // --- activity (recent first)
     try {
-      saving = true;
-      const docRef = ffs.doc(db, 'profiles', currentUID);
-      await ffs.setDoc(docRef, { ...profile, updatedAt: ffs.serverTimestamp() }, { merge: true });
-      flash = { type: 'success', text: 'Profile saved!' };
-    } catch (e) {
-      console.error(e);
-      flash = { type: 'error', text: 'Failed to save profile.' };
-    } finally {
-      saving = false;
-      setTimeout(()=>flash=null,2200);
+      const actQ = ffs.query(
+        ffs.collection(db, 'activity'),
+        ffs.where('uid', '==', currentUID),
+        ffs.orderBy('createdAt', 'desc'),
+        ffs.limit(15)
+      );
+      const actSnap = await ffs.getDocs(actQ);
+      recentActivity = actSnap.docs.map((doc: any) => {
+        const x = doc.data();
+        const when = x?.createdAt?.toDate?.()?.toLocaleString?.() ?? 'recently';
+        const txt = x?.type === 'puzzle_solved'
+          ? `Solved “${x?.puzzleTitle ?? 'Untitled'}” ✅`
+          : x?.type === 'puzzle_created'
+          ? `Created “${x?.puzzleTitle ?? 'Untitled'}” 🧩`
+          : x?.text ?? 'Did something';
+        return { at: when, text: txt };
+      });
+    } catch { recentActivity = []; }
+
+    // --- pinned puzzles
+    try {
+      const pinQ = ffs.query(
+        ffs.collection(db, 'puzzles'),
+        ffs.where('owner', '==', currentUID),
+        ffs.where('isPinned', '==', true),
+        ffs.limit(8)
+      );
+      const pinSnap = await ffs.getDocs(pinQ);
+      pinnedPuzzles = pinSnap.docs.map((d: any) => {
+        const x = d.data() || {};
+        const toTitle = (s: string) => (s ? s[0].toUpperCase() + s.slice(1).toLowerCase() : s);
+        return {
+          id: d.id,
+          title: x.title ?? 'Untitled',
+          difficulty: toTitle((x.difficulty ?? 'Medium').toString()) as 'Easy'|'Medium'|'Hard'
+        };
+      });
+    } catch { pinnedPuzzles = []; }
+
+// --- my puzzles (by author), most recent first
+try {
+const mapPuzzle = (d: any): MyPuzzle => {
+  const x = d.data() || {};
+  const norm = (s: any) =>
+    (s ? String(s)[0].toUpperCase() + String(s).slice(1).toLowerCase() : 'Medium');
+
+  return {
+    id: d.id,
+    title: x.title ?? 'Untitled',
+    description: x.description ?? '',
+    category: x.category ?? 'General',
+    difficulty: norm(x.difficulty ?? 'Medium') as 'Easy' | 'Medium' | 'Hard',
+    imageUrl: x.imageUrl ?? '',
+    isPinned: !!x.isPinned,
+    solveCount: x.solveCount ?? 0,
+    createdAt:
+      x.createdAt?.toDate?.()?.toISOString?.() ??
+      x.publishedAt?.toDate?.()?.toISOString?.() ??
+      new Date().toISOString(),              // ⬅️ comma was missing here
+    isPublished: !!x.isPublished,
+    status: (x.status ?? (x.isPublished ? 'published' : 'draft')) as 'draft' | 'published'
+  };
+};
+
+
+  const seen: Record<string, MyPuzzle> = {};
+  const col = ffs.collection(db, 'puzzles');
+
+  // A) author.uid == currentUID
+  try {
+    let q = ffs.query(
+      col,
+      ffs.where('author.uid', '==', currentUID),
+      ffs.orderBy('createdAt', 'desc'),
+      ffs.limit(60)
+    );
+    let snap;
+    try { snap = await ffs.getDocs(q); }
+    catch {
+      // Fallback if index missing: same filter without orderBy
+      q = ffs.query(col, ffs.where('author.uid', '==', currentUID), ffs.limit(60));
+      snap = await ffs.getDocs(q);
     }
+    snap.docs.forEach((d: any) => { seen[d.id] = mapPuzzle(d); });
+  } catch {}
+
+  // B) Fallback: author.email == profile.email (in case UID wasn’t saved)
+  if (Object.keys(seen).length === 0 && profile.email) {
+    try {
+      let q = ffs.query(
+        col,
+        ffs.where('author.email', '==', profile.email),
+        ffs.orderBy('createdAt', 'desc'),
+        ffs.limit(60)
+      );
+      let snap;
+      try { snap = await ffs.getDocs(q); }
+      catch {
+        q = ffs.query(col, ffs.where('author.email', '==', profile.email), ffs.limit(60));
+        snap = await ffs.getDocs(q);
+      }
+      snap.docs.forEach((d: any) => { seen[d.id] = mapPuzzle(d); });
+    } catch {}
   }
+
+  // C) Optional: if puzzles live in subcollections, use collectionGroup fallback
+  try {
+    if (ffs.collectionGroup && Object.keys(seen).length === 0) {
+      const cg = ffs.collectionGroup(db, 'puzzles');
+      let q = ffs.query(
+        cg,
+        ffs.where('author.uid', '==', currentUID),
+        ffs.orderBy('createdAt', 'desc'),
+        ffs.limit(60)
+      );
+      let snap;
+      try { snap = await ffs.getDocs(q); }
+      catch {
+        q = ffs.query(cg, ffs.where('author.uid', '==', currentUID), ffs.limit(60));
+        snap = await ffs.getDocs(q);
+      }
+      snap.docs.forEach((d: any) => { seen[d.id] = mapPuzzle(d); });
+    }
+  } catch {}
+
+  myPuzzles = Object.values(seen).sort(
+    (a, b) => (b.createdAt ?? '').localeCompare(a.createdAt ?? '')
+  );
+
+  console.debug('[MyPuzzles by author]', currentUID, myPuzzles.map(p => p.id));
+} catch {
+  myPuzzles = [];
+}
+
+
+    // --- most recently played
+    try {
+      const playsQ = ffs.query(
+        ffs.collection(db, 'plays'),
+        ffs.where('uid', '==', currentUID),
+        ffs.orderBy('updatedAt', 'desc'),
+        ffs.limit(1)
+      );
+      const playsSnap = await ffs.getDocs(playsQ);
+      const doc = playsSnap.docs[0];
+      if (doc) {
+        const x = doc.data() || {};
+        lastPlayed = {
+          id: x.puzzleId,
+          title: x.puzzleTitle ?? 'Untitled Puzzle',
+          progress: x.progressPercent ?? undefined
+        };
+      } else {
+        lastPlayed = null;
+      }
+    } catch { lastPlayed = null; }
+
+  } catch (e) {
+    console.error(e);
+    flash = { type: 'error', text: 'Failed to load your profile.' };
+  } finally {
+    loading = false;
+    if (flash) setTimeout(() => (flash = null), 2200);
+  }
+}
+
+// small local helper (used in My Puzzles cards)
+function getDifficultyColor(difficulty: string) {
+  switch ((difficulty || 'Medium')) {
+    case 'Easy':   return 'text-green-600 dark:text-green-400 bg-green-100 dark:bg-green-900/30';
+    case 'Medium': return 'text-yellow-600 dark:text-yellow-400 bg-yellow-100 dark:bg-yellow-900/30';
+    case 'Hard':   return 'text-red-600 dark:text-red-400 bg-red-100 dark:bg-red-900/30';
+    default:       return 'text-zinc-600 dark:text-zinc-400 bg-zinc-100 dark:bg-zinc-900/30';
+  }
+}
+
+// wire up the Publish button
+let publishBusy: string | null = null;
+
+async function togglePublishPuzzle(p: MyPuzzle) {
+  if (!db || !ffs) return;
+  try {
+    publishBusy = p.id;
+
+    const next = !p.isPublished; // true → publish, false → unpublish
+    const ref = ffs.doc(db, 'puzzles', p.id);
+
+    const payload: any = {
+      isPublished: next,
+      status: next ? 'published' : 'draft',
+      updatedAt: ffs.serverTimestamp()
+    };
+
+    if (next) {
+      // going published: set publishedAt and (re)ensure author is present
+      payload.publishedAt = ffs.serverTimestamp();
+      payload.author = {
+        uid: currentUID,
+        email: profile.email ?? '',
+        name: profile.name ?? '',
+        photoURL: profile.photoURL ?? ''
+      };
+    } else {
+      // going unpublished: remove publishedAt (or keep it if you prefer)
+      payload.publishedAt = ffs.deleteField ? ffs.deleteField() : null;
+    }
+
+    await ffs.setDoc(ref, payload, { merge: true });
+
+    // Optimistic UI update
+    myPuzzles = myPuzzles.map(x =>
+      x.id === p.id ? { ...x, isPublished: next, status: payload.status } : x
+    );
+
+    flash = { type: 'success', text: next ? 'Puzzle published.' : 'Puzzle unpublished.' };
+  } catch (e) {
+    console.error('toggle publish failed', e);
+    flash = { type: 'error', text: 'Could not update publish state.' };
+  } finally {
+    publishBusy = null;
+    setTimeout(() => (flash = null), 2200);
+  }
+}
+
+
+    // Save profile changes to Firestore
+    async function saveProfile() {
+      if (!db || !ffs || !currentUID) return;
+      try {
+        saving = true;
+        const docRef = ffs.doc(db, 'profiles', currentUID);
+        await ffs.setDoc(docRef, { ...profile, updatedAt: ffs.serverTimestamp() }, { merge: true });
+        flash = { type: 'success', text: 'Profile saved!' };
+      } catch (e) {
+        console.error(e);
+        flash = { type: 'error', text: 'Failed to save profile.' };
+      } finally {
+        saving = false;
+        setTimeout(()=>flash=null,2200);
+      }
+    }
+  
 
   function initials(name: string) {
     if (!name) return 'U';
@@ -255,12 +406,11 @@
 
     if (USE_FIREBASE && fb?.onUserChanged) {
       // Keep page reactive to auth changes
-      fb.onUserChanged(async (u: any) => {
+      unsubscribeAuth = fb.onUserChanged(async (u: any) => {
         loading = true;
         if (!u) {
           currentUID = null;
-          // Optional redirect; comment if you prefer to stay:
-          // goto('/signin?next=/profile');
+          // goto('/signin?next=/profile'); // Optional redirect
           loading = false;
           return;
         }
@@ -275,6 +425,10 @@
       // Fallback: attempt a one-time load
       await loadFromFirebase();
     }
+  });
+
+  onDestroy(() => {
+    try { unsubscribeAuth?.(); } catch {}
   });
 </script>
 
@@ -353,7 +507,8 @@
       </div>
     </div>
 
-    <!-- Pinned puzzles -->
+<!-- Pinned puzzles -->
+
     <div class="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
       <div class="mb-2 flex items-center justify-between">
         <h3 class="text-lg font-semibold text-zinc-900 dark:text-zinc-100">Pinned Puzzles</h3>
@@ -447,77 +602,91 @@
         {/if}
       </div>
 
-    {:else if tab === 'mypuzzles'}
-      <!-- My Puzzles -->
-      <div class="rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
-        <div class="flex items-center justify-between border-b border-zinc-200 px-6 py-4 dark:border-zinc-800">
-          <h3 class="text-lg font-semibold text-zinc-900 dark:text-zinc-100">My Puzzles</h3>
-          <a href="/create"
-             class="rounded-md bg-[color:var(--brand)] px-3 py-2 text-sm font-semibold text-white shadow-sm transition hover:brightness-95 focus:outline-none focus:ring-2 focus:ring-[color:var(--brand)]/40">
-            + New Puzzle
-          </a>
-        </div>
+{:else if tab === 'mypuzzles'}
+  <!-- My Puzzles -->
+  <div class="rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+    <div class="flex items-center justify-between border-b border-zinc-200 px-6 py-4 dark:border-zinc-800">
+      <h3 class="text-lg font-semibold text-zinc-900 dark:text-zinc-100">My Puzzles</h3>
+      <a href="/create"
+         class="rounded-md bg-[color:var(--brand)] px-3 py-2 text-sm font-semibold text-white shadow-sm transition hover:brightness-95 focus:outline-none focus:ring-2 focus:ring-[color:var(--brand)]/40">
+        + New Puzzle
+      </a>
+    </div>
 
-        {#if myPuzzles.length > 0}
-          <div class="grid grid-cols-1 gap-6 p-6 sm:grid-cols-2">
-            {#each myPuzzles as p}
-              <div class="overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-sm transition hover:shadow-md dark:border-zinc-800 dark:bg-zinc-900">
-                <div class="relative flex aspect-video items-center justify-center bg-gradient-to-br from-[color:var(--brand)]/10 to-emerald-200/20 dark:from-[color:var(--brand)]/20 dark:to-emerald-900/10">
-                  {#if p.imageUrl}
-                    <img src={p.imageUrl} alt={p.title} class="h-full w-full object-cover" loading="lazy" />
-                  {/if}
-                  {#if p.isPinned}
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"
-                         class="absolute right-2 top-2 h-5 w-5 rotate-[-20deg] text-[color:var(--brand)] drop-shadow"
-                         aria-label="Pinned">
-                      <circle cx="12" cy="7" r="3"/><rect x="11" y="9.5" width="2" height="7.5" rx="1"/><path d="M12 17l-2 5h4l-2-5z"/>
-                    </svg>
-                  {/if}
-                </div>
+    {#if myPuzzles.length > 0}
+      <div class="grid grid-cols-1 gap-6 p-6 sm:grid-cols-2">
+        {#each myPuzzles as p}
+          <div class="overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-sm transition hover:shadow-md dark:border-zinc-800 dark:bg-zinc-900">
+            <div class="relative flex aspect-video items-center justify-center bg-gradient-to-br from-[color:var(--brand)]/10 to-emerald-200/20 dark:from-[color:var(--brand)]/20 dark:to-emerald-900/10">
+              {#if p.imageUrl}
+                <img src={p.imageUrl} alt={p.title} class="h-full w-full object-cover" loading="lazy" />
+              {/if}
+              {#if p.isPinned}
+                <svg viewBox="0 0 24 24" fill="currentColor"
+                     class="absolute right-2 top-2 h-5 w-5 rotate-[-20deg] text-[color:var(--brand)] drop-shadow"
+                     aria-label="Pinned">
+                  <circle cx="12" cy="7" r="3" />
+                  <rect x="11" y="9.5" width="2" height="7.5" rx="1" />
+                  <path d="M12 17l-2 5h4l-2-5z" />
+                </svg>
+              {/if}
+            </div>
 
-                <div class="p-5">
-                  <div class="mb-2 flex items-start justify-between gap-3">
-                    <h4 class="line-clamp-2 text-base font-semibold text-zinc-900 dark:text-zinc-100">{p.title}</h4>
-                    {#if p.difficulty}
-                      <span class="rounded px-2 py-1 text-xs font-medium ring-1 ring-inset ring-[color:var(--brand)]/30">{p.difficulty}</span>
-                    {/if}
-                  </div>
-
-                  {#if p.description}
-                    <p class="mb-3 line-clamp-2 text-sm text-zinc-600 dark:text-zinc-400">{p.description}</p>
-                  {/if}
-
-                  <div class="mb-4 flex items-center justify-between text-xs text-zinc-500 dark:text-zinc-400">
-                    <span>{p.category ?? 'General'}</span>
-                    <span>{p.solveCount ?? 0} solves</span>
-                  </div>
-
-                  <!-- Centered actions -->
-                  <div class="flex items-center justify-center gap-3">
-                    <a href={"/gameboard/" + p.id}
-                       class="rounded-md border border-[color:var(--brand)]/30 px-3 py-2 text-sm font-medium text-[color:var(--brand)] transition hover:bg-[color:var(--brand)]/10 focus:outline-none focus:ring-2 focus:ring-[color:var(--brand)]/40">
-                      Play
-                    </a>
-                    <a href={"/edit/" + p.id}
-                       class="rounded-md bg-[color:var(--brand)] px-3 py-2 text-sm font-semibold text-white shadow-sm transition hover:brightness-95 focus:outline-none focus:ring-2 focus:ring-[color:var(--brand)]/40">
-                      Edit
-                    </a>
-                  </div>
-                </div>
+            <div class="p-6">
+              <div class="mb-3 flex items-start justify-between gap-3">
+                <h4 class="line-clamp-2 text-base font-semibold text-zinc-900 dark:text-zinc-100">{p.title}</h4>
+                <span class={`rounded px-2 py-1 text-xs font-medium ${getDifficultyColor(p.difficulty ?? 'Medium')}`}>
+                  {p.difficulty ?? 'Medium'}
+                </span>
               </div>
-            {/each}
+
+              {#if p.description}
+                <p class="mb-3 overflow-hidden text-sm text-zinc-600 [display:-webkit-box] [WebkitLineClamp:2] [WebkitBoxOrient:vertical] dark:text-zinc-400">
+                  {p.description}
+                </p>
+              {/if}
+
+              <div class="mb-4 flex items-center justify-between text-xs text-zinc-500 dark:text-zinc-400">
+                <span>{p.category ?? 'General'}</span>
+                <span>{p.solveCount ?? 0} solves</span>
+              </div>
+
+              <div class="flex items-center justify-center gap-3">
+                <a href={"/gameboard/" + encodeURIComponent(p.id)}
+                   data-sveltekit-preload-data="hover"
+                   data-sveltekit-preload-code="hover"
+                   class="rounded-md border border-[color:var(--brand)]/30 px-3 py-2 text-sm font-medium text-[color:var(--brand)] transition hover:bg-[color:var(--brand)]/10 focus:outline-none focus:ring-2 focus:ring-[color:var(--brand)]/40">
+                  Play
+                </a>
+                <a href={"/edit/" + encodeURIComponent(p.id)}
+                   class="rounded-md bg-[color:var(--brand)] px-3 py-2 text-sm font-semibold text-white shadow-sm transition hover:brightness-95 focus:outline-none focus:ring-2 focus:ring-[color:var(--brand)]/40">
+                  Edit
+                </a>
+<button
+  type="button"
+  on:click={() => togglePublishPuzzle(p)}
+  disabled={publishBusy === p.id}
+  class="rounded-md border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-700 transition hover:bg-zinc-50 focus:outline-none focus:ring-2 focus:ring-[color:var(--brand)]/40 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800 disabled:opacity-60 disabled:cursor-not-allowed">
+  {publishBusy === p.id ? 'Updating…' : (p.isPublished ? 'Unpublish' : 'Publish')}
+</button>
+
+              </div>
+            </div>
           </div>
-        {:else}
-          <div class="p-10 text-center">
-            <div class="mb-2 text-5xl">🧩</div>
-            <p class="mb-4 text-zinc-700 dark:text-zinc-300">You haven’t created any puzzles yet.</p>
-            <a href="/create"
-               class="rounded-md bg-[color:var(--brand)] px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:brightness-95 focus:outline-none focus:ring-2 focus:ring-[color:var(--brand)]/40">
-              Create your first puzzle
-            </a>
-          </div>
-        {/if}
+        {/each}
       </div>
+    {:else}
+      <div class="p-10 text-center">
+        <div class="mb-2 text-5xl">🧩</div>
+        <p class="mb-4 text-zinc-700 dark:text-zinc-300">You haven’t created any puzzles yet.</p>
+        <a href="/create"
+           class="rounded-md bg-[color:var(--brand)] px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:brightness-95 focus:outline-none focus:ring-2 focus:ring-[color:var(--brand)]/40">
+          Create your first puzzle
+        </a>
+      </div>
+    {/if}
+  </div>
+
 
     {:else if tab === 'activity'}
       <!-- Activity timeline -->

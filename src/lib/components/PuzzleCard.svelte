@@ -1,88 +1,68 @@
 <script lang="ts">
-  import { onMount } from "svelte";
   import { createEventDispatcher } from "svelte";
 
-  const PCARD_VERSION = "PuzzleCard v2025-09-11c";
-  onMount(() => console.log("[PuzzleCard] mounted:", PCARD_VERSION));
-
-  /** Front word (e.g., "Apple") */
   export let text: string;
-  /** Unique word id (used in the toggle event) */
   export let wordId: string;
-  /** While the player has this tile selected (pre-submission) */
   export let selected = false;
-  /** When the 4-word group is solved, lock+flip this tile */
-  export let locked = false;
-  /** Group title shown on the back (e.g., "Fruits") */
+  export let locked = false;   // <- drives the flip
   export let label = "";
 
   const dispatch = createEventDispatcher();
   function toggle() { if (!locked) dispatch("toggle", { wordId }); }
 
-  // EXACTLY the original teal-glow classes you had before
+  // teal glow when selected
   $: selectedGlow = selected
     ? "ring-2 ring-[rgba(20,184,166,.65)] shadow-[0_10px_30px_rgba(20,184,166,.18)] border-[rgba(20,184,166,.65)]"
     : "";
-
-  // Debug
-  $: console.log("[PuzzleCard] wordId=", wordId, "locked=", locked);
 </script>
 
-<div
-  data-locked={locked ? "true" : "false"}
-  role="button"
-  tabindex="0"
-  aria-pressed={selected}
-  aria-label={locked ? `${label} (solved)` : `Word ${text}`}
-  on:click={toggle}
-  on:keydown={(e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), toggle())}
-
-  class={`brand-scope relative select-none cursor-pointer rounded-2xl border overflow-hidden
-          transition-[transform,box-shadow,border-color] duration-200
-          hover:-translate-y-0.5
-          focus-visible:outline-none focus-visible:brand-ring
-          brand-card brand-border
-          ${selectedGlow}
-          perspective-1200`}
-  style="min-height:88px;"
->
-  <!-- Flipper -->
-  <div
-    class="absolute inset-0 rounded-2xl transition-transform duration-500 ease-[cubic-bezier(.2,.6,.2,1)]
-           transform-gpu preserve-3d will-change-transform"
-    style="
-      transform: rotateY({locked ? 180 : 0}deg);
-      transform-style: preserve-3d;
-      -webkit-transform-style: preserve-3d;
-    "
+<!-- Perspective on wrapper (ancestor of the rotating element) -->
+<div class="relative w-full h-full [perspective:1100px] select-none">
+  <!-- Card container (no transform here to avoid interfering with 3D) -->
+  <button
+    type="button"
+    on:click={toggle}
+    on:keydown={(e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), toggle())}
+    aria-pressed={selected}
+    aria-label={locked ? `${label} (solved)` : `Word ${text}`}
+    class={`relative w-full h-full rounded-2xl overflow-hidden border
+            bg-[#0f1729] text-[#cfe1ff] border-[#304a76]
+            focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400/60
+            transition-[box-shadow,border-color] duration-200
+            ${selectedGlow}`}
+    style="min-height:88px;"
   >
-    <!-- FRONT -->
+    <!-- FLIPPER: the ONLY element with transform -->
     <div
-      class="absolute inset-0 grid place-items-center rounded-2xl"
-      style="
-        backface-visibility: hidden;
-        -webkit-backface-visibility: hidden;
-        transform: rotateY(0deg);
-      "
+      class="absolute inset-0 rounded-2xl will-change-transform [transform-style:preserve-3d]"
+      style:transform={`rotateY(${locked ? 180 : 0}deg)`}
+      style="transition: transform 500ms cubic-bezier(.2,.6,.2,1);"
     >
-      <span class="px-2 py-0.5 rounded-md max-w-[95%] truncate font-medium tracking-wide">
-        {text}
-      </span>
-    </div>
+      <!-- FRONT -->
+      <div
+        class="absolute inset-0 grid place-items-center rounded-2xl"
+        style="backface-visibility:hidden; -webkit-backface-visibility:hidden;"
+      >
+        <span class="px-2 py-0.5 rounded-md max-w-[95%] truncate font-medium tracking-wide">
+          {text}
+        </span>
+      </div>
 
-    <!-- BACK (solid teal/brand) -->
-    <div
-      class="absolute inset-0 grid place-items-center rounded-2xl brand-back"
-      style="
-        backface-visibility: hidden;
-        -webkit-backface-visibility: hidden;
-        transform: rotateY(180deg);
-      "
-    >
-      <strong class="px-3 text-center">{label}</strong>
+      <!-- BACK (visible when flipped) -->
+      <div
+        class="absolute inset-0 grid place-items-center rounded-2xl
+               bg-[rgba(20,184,166,.12)] border border-teal-500/50"
+        style="backface-visibility:hidden; -webkit-backface-visibility:hidden; transform:rotateY(180deg);"
+      >
+        <div class="flex items-center gap-2">
+          <span class="w-2 h-2 rounded-full bg-teal-500"></span>
+          <strong class="px-3 text-center text-teal-300">{label || "Solved"}</strong>
+        </div>
+      </div>
     </div>
-  </div>
+  </button>
 </div>
+
 
 <style>
   /* Use either --brand (Browse) or --color-brand (app.css) */
