@@ -265,53 +265,57 @@ export async function fetchBrowsePuzzles(max = 60) {
   const toTitle = (s: string) => (s ? s[0].toUpperCase() + s.slice(1).toLowerCase() : s);
 
   const mapDoc = (d: any) => {
-    const x = d.data() as any;
-    const createdBy =
-      typeof x?.createdBy === "object"
-        ? x.createdBy.displayName ?? x.createdBy.uid ?? "Unknown"
-        : x?.createdBy ?? "Unknown";
+    const x: any = d.data() || {};
     return {
       id: d.id,
       title: x.title ?? "Untitled",
       description: x.description ?? "",
-      category: x.category ?? "General",
+      // if you only store categories[], derive a label from the first one:
+      category: x.category ?? x.categories?.[0]?.title ?? "General",
       difficulty: toTitle((x.difficulty ?? "medium").toString()),
       solveCount: x.solveCount ?? 0,
-      createdBy,
+      // <-- use author.* which you write on publish
+      createdBy: x.author?.name ?? x.author?.email ?? "Anonymous",
       imageUrl: x.imageUrl ?? "",
       isPinned: !!x.isPinned,
+      // prefer publishedAt for display/ordering
       createdAt:
-        x.createdAt?.toDate?.()?.toISOString?.() ??
         x.publishedAt?.toDate?.()?.toISOString?.() ??
+        x.createdAt?.toDate?.()?.toISOString?.() ??
         new Date().toISOString(),
     };
   };
 
+  // Only published puzzles, newest first.
   try {
-    const qRef = query(col.puzzles(), orderBy("isPinned", "desc"), orderBy("createdAt", "desc"), limit(max));
-    const snap = await getDocs(qRef);
+    let qRef = query(
+      col.puzzles(),
+      where("isPublished", "==", true),
+      orderBy("publishedAt", "desc"),
+      limit(max)
+    );
+    let snap = await getDocs(qRef);
     return snap.docs.map(mapDoc);
-  } catch (err) {
-    console.warn("browse ordered query failed; falling back:", err);
-    const snap = await getDocs(col.puzzles());
-    return snap.docs.slice(0, max).map(mapDoc);
+  } catch {
+    // If the index for (isPublished==true, publishedAt desc) isn't created yet,
+    // fall back to createdAt, then to filter-only.
+    try {
+      const qRef = query(
+        col.puzzles(),
+        where("isPublished", "==", true),
+        orderBy("createdAt", "desc"),
+        limit(max)
+      );
+      const snap = await getDocs(qRef);
+      return snap.docs.map(mapDoc);
+    } catch {
+      const qRef = query(col.puzzles(), where("isPublished", "==", true), limit(max));
+      const snap = await getDocs(qRef);
+      return snap.docs.map(mapDoc);
+    }
   }
 }
 
-
-/* ------------------------------------------------------------------ */
-/* Activity feed helpers                                               */
-/* ------------------------------------------------------------------ */
-
-// Live feed with snapshot listener
-export function subscribeActivityFeed(cb: (items: { id: string } & ActivityDoc) => void, max = 20) {
-  const qRef = query(col.activity(), orderBy("createdAt", "desc"), limit(max));
-  return onSnapshot(qRef, (snap) => {
-    snap.docChanges().forEach((change) => {
-      cb({ id: change.doc.id, ...(change.doc.data() as ActivityDoc) });
-    });
-  });
-}
 
 // One-time fetch with pagination support
 export async function fetchActivityPage(max = 20, cursor?: any) {
