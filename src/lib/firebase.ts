@@ -67,6 +67,17 @@ export const auth = getAuth(app);
 // Project id (handy for debugging)
 export const PROJECT_ID = firebaseConfig.projectId;
 
+/* Small convenience to read the current user without importing auth everywhere. */
+export function currentUser(): User | null {
+  try {
+    return auth.currentUser;
+  } catch {
+    return null;
+  }
+}
+
+/* Re-export the User type so other modules can import from $lib/firebase */
+export type { User };
 
 /* ------------------------------------------------------------------ */
 /* Auth helpers                                                        */
@@ -133,7 +144,6 @@ export function normalizeGoogleAvatar(rawUrl: string, size = 128) {
   }
 }
 
-
 /* ------------------------------------------------------------------ */
 /* Typed refs/collections                                              */
 /* ------------------------------------------------------------------ */
@@ -155,7 +165,6 @@ export const ref = {
     doc(db, `puzzles/${puzzleId}/plays/${uid}`).withConverter(Converters.plays),
 };
 
-
 /* ------------------------------------------------------------------ */
 /* App-level query helpers                                             */
 /* ------------------------------------------------------------------ */
@@ -171,13 +180,7 @@ export async function fetchPublicPuzzles(max = 20) {
   return snap.docs.map((d) => ({ id: d.id, ...d.data() } as { id: string } & PuzzleDoc));
 }
 
-
-// Fetch a single puzzle by its document ID.
-// Returns a typed object (including the `id`) if it exists, otherwise `null`.
-// src/lib/firebase.ts
-
 // Fetch a single puzzle by its document ID and normalize to the GameBoard engine shape.
-
 export async function fetchPuzzle(id: string) {
   const snap = await getDoc(ref.puzzle(id));
   if (!snap.exists()) return null;
@@ -213,8 +216,6 @@ export async function fetchPuzzle(id: string) {
 }
 
 // Create or update (merge) a user document based on the currently signed-in Auth user.
-// Initializes sensible defaults for settings/stats/pinned on first sign-in.
-
 export async function upsertUser(u: User) {
   const payload: UserDoc = {
     displayName: u.displayName ?? "Anonymous",
@@ -256,7 +257,6 @@ export async function setLike(puzzleId: string, uid: string, like: boolean) {
   }
 }
 
-
 /* ------------------------------------------------------------------ */
 /* Browse grid data loader                                             */
 /* ------------------------------------------------------------------ */
@@ -297,8 +297,7 @@ export async function fetchBrowsePuzzles(max = 60) {
     let snap = await getDocs(qRef);
     return snap.docs.map(mapDoc);
   } catch {
-    // If the index for (isPublished==true, publishedAt desc) isn't created yet,
-    // fall back to createdAt, then to filter-only.
+    // Fallbacks if composite index not ready yet
     try {
       const qRef = query(
         col.puzzles(),
@@ -315,7 +314,6 @@ export async function fetchBrowsePuzzles(max = 60) {
     }
   }
 }
-
 
 // One-time fetch with pagination support
 export async function fetchActivityPage(max = 20, cursor?: any) {
