@@ -6,6 +6,7 @@
   import { shuffled } from "$lib/gameLogic"; // ← keep your shuffle; no groupName
   import PuzzleCard from "$lib/components/PuzzleCard.svelte";
   import CompletionRing from "$lib/effects/CompletionRing.svelte";
+  import { initRunPersistence, type RunState } from "$lib/useRunPersistence";
 
   // ── Props ────────────────────────────────────────────────────────────────────
   export let puzzleId: string | number | null = null;
@@ -67,6 +68,9 @@
   let order: string[] = [];
   let selection: string[] = [];
   let solved: Array<GID> = [];
+  let foundIds: string[][] = [];      // persisted: solved sets of 4 ids
+  let moves = 0;                      // persisted
+  let completed = false;              // persisted
   let shaking = false;
   let showRing = false;
   let resolving = false;
@@ -74,6 +78,38 @@
 
   const RESOLVE_WRONG_MS = 450;
   const RESOLVE_CORRECT_MS = 350;
+
+  // persistence handle + helpers
+  $: puzzleKey = String(puzzle?.id ?? puzzleId ?? "live");
+  let persist: ReturnType<typeof initRunPersistence> | null = null;
+
+  function getRunState(): RunState {
+    return {
+      title: (puzzle as any)?.title ?? "",
+      author: (puzzle as any)?.author ?? "",
+      moves,
+      completed,
+      selectedIds: selection,
+      foundIds,
+      seed: initialSeed
+    };
+  }
+
+  function applyRunState(s: Partial<RunState>) {
+    if (Array.isArray(s.selectedIds)) selection = s.selectedIds.filter((id) => allIds.includes(id));
+    if (Array.isArray(s.foundIds))    foundIds = s.foundIds.map(set => set.filter((id) => allIds.includes(id)));
+    if (typeof s.moves === "number")  moves = s.moves;
+    if (typeof s.completed === "boolean") completed = s.completed;
+    if (typeof s.seed === "number")   initialSeed = s.seed;
+
+    const set = new Set<GID>();
+    for (const group of foundIds) for (const id of group) set.add(gidOf(id));
+    solved = Array.from(set);
+  }
+
+  function persistDebounced() {
+    persist?.persistDebounced(250);
+  }
 
   // ── Shape adaptation (preserve categories) ──────────────────────────────────
   function isEngineShape(p: any): p is EnginePuzzle {
@@ -99,6 +135,10 @@
   $: words = (puzzle?.words ?? []) as EngineWord[];
   $: allIds = words.map((w) => w.id);
   function siToOrig(si: number): number { const id = order[si]; return allIds.indexOf(id); }
+  function gidOf(id: string): GID {
+    const w = words.find((x) => x.id === id);
+    return (w?.groupId ?? "A") as GID;
+  }
 
   // Build a robust map from groupId → category title by matching the 4 words
   function normalize(s: any) {
@@ -112,15 +152,12 @@
 
     if (!cats.length) return out;
 
-    // Set of each category's words (normalized)
     const catWordSets = cats.map((c) => new Set((c?.words ?? []).map(normalize)));
 
-    // For each groupId, collect the 4 word texts and find the category whose words contain them
-    (["A", "B", "C", "D"] as GID[]).forEach((gid, idx) => {
+    (["A", "B", "C", "D"] as GID[]).forEach((gid) => {
       const groupWords = words.filter((w) => w.groupId === gid).map((w) => normalize(w.text));
       if (groupWords.length === 0) return;
 
-      // best match: category that contains all 4; fallback: highest overlap
       let bestIdx = -1;
       let bestScore = -1;
       catWordSets.forEach((set, ci) => {
@@ -130,17 +167,15 @@
 
       if (bestIdx >= 0 && bestScore > 0) {
         const title = (cats[bestIdx]?.title ?? cats[bestIdx]?.name ?? "").toString().trim();
-        out[gid] = title; // if empty in Firestore, this will intentionally be ""
+        out[gid] = title;
       }
     });
 
     return out;
   }
 
-  // Build title map reactively whenever puzzle/words/categories change
   $: titleByGid = buildTitleByGroup();
 
-  // Convenience: everything else can ask here
   function titleFor(gid: GID): string {
     return titleByGid[gid] ?? "";
   }
@@ -186,27 +221,18 @@
         order = idxs.map((i) => ids[i]);
       }
 
-      if (resumeState?.selectedWords?.length) {
-        selection = resumeState.selectedWords
-          .map((txt) => words.find((w) => w.text === txt)?.id)
-          .filter(Boolean) as string[];
-      } else if (resumeState?.selectedOrig?.length) {
-        selection = resumeState.selectedOrig.map((i) => allIds[i]);
-      } else if (resumeState?.selectedSi?.length) {
-        selection = resumeState.selectedSi.map((si) => order[si]).filter(Boolean);
-      } else {
-        selection = [];
-      }
+      selection = [];
+      foundIds = [];
+      solved = [];
+      moves = 0;
+      completed = false;
 
-      if (resumeState?.solvedByOrig?.length === allIds.length) {
-        const set = new Set<GID>();
-        resumeState.solvedByOrig.forEach((flag, i) => {
-          if (flag) set.add((words[i]?.groupId)! as GID);
-        });
-        solved = Array.from(set);
-      } else {
-        solved = [];
-      }
+      persist = initRunPersistence({
+        puzzleId: puzzleKey,
+        getState: getRunState,
+        applyState: applyRunState
+      });
+      await persist.load();
 
       justSolvedIds = [];
       await tick();
@@ -229,16 +255,19 @@
     if (selection.includes(id)) {
       selection = selection.filter((x) => x !== id);
       emitNow();
+      persistDebounced();
       return;
     }
     if (selection.length >= 4) return;
 
     selection = [...selection, id];
+    moves += 1;
 
     if (selection.length === 4) {
       checkSelection();
     } else {
       emitNow();
+      persistDebounced();
     }
   }
 
@@ -249,19 +278,27 @@
     shaking = false;
     dispatch("clear", { clearedSolved: hadSolved });
     emitNow();
+    persistDebounced();
   }
 
-  function shuffle() {
-    if (resolving) return;
-    const ids = [...order];
-    const idxs = shuffled(ids.map((_, i) => i), Math.floor(Math.random() * 100000));
-    order = idxs.map((i) => ids[i]);
-    selection = [];
-    shaking = false;
-    justSolvedIds = [];
-    dispatch("shuffle");
-    emitNow();
-  }
+function shuffle() {
+  if (resolving) return;
+
+  // Re-shuffle the visual order only
+  const ids = [...order];
+  const idxs = shuffled(ids.map((_, i) => i), Math.floor(Math.random() * 100000));
+  order = idxs.map((i) => ids[i]);
+
+  // ✅ Do NOT clear selection — keep any in-progress picks
+  // Found groups remain locked as before
+  shaking = false;
+  justSolvedIds = [];
+
+  dispatch("shuffle");
+  emitNow();
+  persistDebounced();
+}
+
 
   function checkSelection() {
     if (!puzzle) return;
@@ -272,21 +309,26 @@
     const allSame = picked.every((w) => w.groupId === groupId);
 
     if (allSame) {
-      // mark group solved
       solved = [...new Set([...solved, groupId])];
       justSolvedIds = [...selection];
 
-      // Title strictly from Firestore categories by word matching
+      if (selection.length === 4) {
+        foundIds = [...foundIds, [...selection]];
+      }
+
       const name = titleFor(groupId);
       dispatch("solve", { groupId, name });
 
       emitNow();
+      persistDebounced();
 
       setTimeout(() => {
         selection = [];
         justSolvedIds = [];
         if (solved.length === 4) {
           dispatch("complete");
+          completed = true;
+          persistDebounced();
           if (celebrateOnComplete) {
             showRing = true;
             setTimeout(() => (showRing = false), 1600);
@@ -294,16 +336,20 @@
         }
         resolving = false;
         emitNow();
+        persistDebounced();
       }, RESOLVE_CORRECT_MS);
     } else {
       shaking = true;
       dispatch("wrong");
+      moves += 1;
       emitNow();
+      persistDebounced();
       setTimeout(() => {
         shaking = false;
         selection = [];
         resolving = false;
         emitNow();
+        persistDebounced();
       }, RESOLVE_WRONG_MS);
     }
   }
@@ -337,57 +383,54 @@
     class:animate-puzzle-shake={shaking}
   >
     {#each order as id (id)}
-  {@const w = words.find((w) => w.id === id)}
-  {#if w}
-    <button
-      type="button"
-      on:click={() => toggleSelect(id)}
-      class="relative w-full h-full rounded-xl focus:outline-none group
-             [perspective:1000px] select-none"
-      aria-pressed={selection.includes(id)}
-      disabled={resolving || solved.includes(w.groupId)}
-      data-locked={solved.includes(w.groupId)}
-      data-selected={selection.includes(id)}
-
-      
-      data-word={w.text}
-      data-id={id}
-      data-group={w.groupId}
-    >
-      <div
-        class="relative w-full h-[70px] sm:h-[92px] md:h-[100px]
-               transition-transform duration-300
-               [transform-style:preserve-3d]
-               group-data-[locked=true]:[transform:rotateY(180deg)]"
-      >
-        <!-- FRONT -->
-        <div class="absolute inset-0 [backface-visibility:hidden]">
-          <PuzzleCard
-            text={w.text}
-            wordId={id}
-            selected={selection.includes(id)}
-            locked={solved.includes(w.groupId)}
-            label={titleFor(w.groupId)}
-            disabled={resolving}
-          />
-        </div>
-
-        <!-- BACK -->
-        <div
-          class="absolute inset-0 [backface-visibility:hidden]
-                 [transform:rotateY(180deg)]
-                 rounded-xl border border-teal-600
-                 bg-teal-500 text-white
-                 grid place-items-center px-2
-                 text-sm sm:text-base font-semibold"
+      {@const w = words.find((w) => w.id === id)}
+      {#if w}
+        <button
+          type="button"
+          on:click={() => toggleSelect(id)}
+          class="relative w-full h-full rounded-xl focus:outline-none group
+                 [perspective:1000px] select-none"
+          aria-pressed={selection.includes(id)}
+          disabled={resolving || solved.includes(w.groupId)}
+          data-locked={solved.includes(w.groupId)}
+          data-selected={selection.includes(id)}
+          data-word={w.text}
+          data-id={id}
+          data-group={w.groupId}
         >
-          {titleFor(w.groupId)}
-        </div>
-      </div>
-    </button>
-  {/if}
-{/each}
+          <div
+            class="relative w-full h-[70px] sm:h-[92px] md:h-[100px]
+                   transition-transform duration-300
+                   [transform-style:preserve-3d]
+                   group-data-[locked=true]:[transform:rotateY(180deg)]"
+          >
+            <!-- FRONT -->
+            <div class="absolute inset-0 [backface-visibility:hidden]">
+              <PuzzleCard
+                text={w.text}
+                wordId={id}
+                selected={selection.includes(id)}
+                locked={solved.includes(w.groupId)}
+                label={titleFor(w.groupId)}
+                disabled={resolving}
+              />
+            </div>
 
+            <!-- BACK -->
+            <div
+              class="absolute inset-0 [backface-visibility:hidden]
+                     [transform:rotateY(180deg)]
+                     rounded-xl border border-teal-600
+                     bg-teal-500 text-white
+                     grid place-items-center px-2
+                     text-sm sm:text-base font-semibold"
+            >
+              {titleFor(w.groupId)}
+            </div>
+          </div>
+        </button>
+      {/if}
+    {/each}
   </div>
 
   {#if showRing}
@@ -399,7 +442,7 @@
   {#if DEBUG}
     <pre class="text-xs text-zinc-500 mt-4">
 {JSON.stringify({
-  order, selection, solved, shaking, resolving,
+  order, selection, solved, foundIds, moves, completed, shaking, resolving,
   titleByGid,
   categories: (puzzle as any)?.categories
 }, null, 2)}
