@@ -1,39 +1,36 @@
 // src/lib/firebase.ts
 
-// initialize the Firebase app instance.
 import { initializeApp } from "firebase/app";
-
-// Firestore (database) APIs: tools to read/write and query documents.
 import {
-  getFirestore,     // create a Firestore instance bound to our app
-  collection,       // get a reference to a collection (table-like)
-  doc,              // get a reference to a single document
-  query,            // build a Firestore query
-  where,            // add a filter to a query (field comparisons)
-  orderBy,          // add a sort order to a query
-  limit,            // limit how many documents to return
-  getDocs,          // run a query and get a snapshot of many docs
-  getDoc,           // read one document by reference
-  setDoc,           // create or update a document
-  deleteDoc,        // delete a document
-  serverTimestamp,  // special value: “use server time” when writing
-  onSnapshot,       // listen to live updates for a query
-  startAfter        // paginate queries
+  getFirestore,
+  collection,
+  doc,
+  query,
+  where,
+  orderBy,
+  limit,
+  getDocs,
+  getDoc,
+  setDoc,
+  deleteDoc,
+  serverTimestamp,
+  onSnapshot,
+  startAfter,
+  type QueryDocumentSnapshot,
+  type DocumentData,
 } from "firebase/firestore";
 
-// Firebase Auth APIs: sign in/out and observe user state.
 import {
-  getAuth,                 // create an Auth instance bound to our app
-  GoogleAuthProvider,      // provider object for Google sign-in
-  OAuthProvider,           // generic OAuth provider (used here for Apple)
-  signInWithPopup,         // open a popup to sign a user in
-  signOut as firebaseSignOut, // sign the current user out (renamed locally)
-  onAuthStateChanged,      // listen for user sign-in/sign-out changes
-  updateProfile,           // update fields on the Auth user (e.g., photoURL)
-  type User,               // TypeScript type for an Auth user object
+  getAuth,
+  GoogleAuthProvider,
+  OAuthProvider,
+  signInWithPopup,
+  signOut as firebaseSignOut,
+  onAuthStateChanged,
+  updateProfile,
+  type User,
 } from "firebase/auth";
 
-// --- App-local imports: Firestore converters and shared types for data safety.
 import { Converters } from "$lib/converters";
 import type { PuzzleDoc, UserDoc, ActivityDoc } from "$lib/types";
 
@@ -41,7 +38,6 @@ import type { PuzzleDoc, UserDoc, ActivityDoc } from "$lib/types";
 /* Firebase boot                                                       */
 /* ------------------------------------------------------------------ */
 
-// Firebase project credentials.
 const firebaseConfig = {
   apiKey: "AIzaSyAJKLordW0gDiM2QsBypZnT1ffwhzvJpjE",
   authDomain: "purple-connection-board.firebaseapp.com",
@@ -49,47 +45,27 @@ const firebaseConfig = {
   storageBucket: "purple-connection-board.firebasestorage.app",
   messagingSenderId: "926105406557",
   appId: "1:926105406557:web:df201cee495fd4591651b4",
-  measurementId: "G-Z6BY1B8RE6"
+  measurementId: "G-Z6BY1B8RE6",
 };
-
-// if the apiKey is missing, fail fast with a clear error.
 if (!firebaseConfig.apiKey) throw new Error("Missing PUBLIC_FIREBASE_API_KEY");
 
-// Create the core Firebase app instance using our config.
 export const app = initializeApp(firebaseConfig);
-
-// Create a Firestore database instance connected to our app.
 export const db = getFirestore(app);
-
-// Create an Auth instance (handles sign-in, sign-out, current user).
 export const auth = getAuth(app);
-
-// Project id (handy for debugging)
 export const PROJECT_ID = firebaseConfig.projectId;
 
-/* Small convenience to read the current user without importing auth everywhere. */
 export function currentUser(): User | null {
-  try {
-    return auth.currentUser;
-  } catch {
-    return null;
-  }
+  try { return auth.currentUser; } catch { return null; }
 }
-
-/* Re-export the User type so other modules can import from $lib/firebase */
 export type { User };
 
 /* ------------------------------------------------------------------ */
 /* Auth helpers                                                        */
 /* ------------------------------------------------------------------ */
 
-// Provider for Google sign-in flows.
 const googleProvider = new GoogleAuthProvider();
-
-// Provider for Apple sign-in (via OAuth).
 const appleProvider = new OAuthProvider("apple.com");
 
-// Sign in the user with Google using a popup window.
 export async function signInWithGoogle() {
   const provider = new GoogleAuthProvider();
   provider.addScope("openid");
@@ -116,19 +92,12 @@ export async function signInWithGoogle() {
   } catch (e) {
     console.warn("Google avatar refresh failed:", e);
   }
-
   return result;
 }
 
-export function signInWithApple() {
-  return signInWithPopup(auth, appleProvider);
-}
-export function signOut() {
-  return firebaseSignOut(auth);
-}
-export function onUserChanged(cb: (u: User | null) => void) {
-  return onAuthStateChanged(auth, cb);
-}
+export function signInWithApple() { return signInWithPopup(auth, appleProvider); }
+export function signOut() { return firebaseSignOut(auth); }
+export function onUserChanged(cb: (u: User | null) => void) { return onAuthStateChanged(auth, cb); }
 export function normalizeGoogleAvatar(rawUrl: string, size = 128) {
   try {
     const u = new URL(rawUrl);
@@ -139,9 +108,7 @@ export function normalizeGoogleAvatar(rawUrl: string, size = 128) {
       return u.toString();
     }
     return rawUrl;
-  } catch {
-    return rawUrl;
-  }
+  } catch { return rawUrl; }
 }
 
 /* ------------------------------------------------------------------ */
@@ -166,7 +133,7 @@ export const ref = {
 };
 
 /* ------------------------------------------------------------------ */
-/* App-level query helpers                                             */
+/* Data helpers                                                        */
 /* ------------------------------------------------------------------ */
 
 export async function fetchPublicPuzzles(max = 20) {
@@ -180,7 +147,6 @@ export async function fetchPublicPuzzles(max = 20) {
   return snap.docs.map((d) => ({ id: d.id, ...d.data() } as { id: string } & PuzzleDoc));
 }
 
-// Fetch a single puzzle by its document ID and normalize to the GameBoard engine shape.
 export async function fetchPuzzle(id: string) {
   const snap = await getDoc(ref.puzzle(id));
   if (!snap.exists()) return null;
@@ -189,7 +155,6 @@ export async function fetchPuzzle(id: string) {
   const groups = ["A", "B", "C", "D"] as const;
   const words: { id: string; text: string; groupId: "A" | "B" | "C" | "D" }[] = [];
 
-  // Preferred: build from categories[0..3].words[0..3]
   if (Array.isArray(x?.categories) && x.categories.length) {
     x.categories.slice(0, 4).forEach((cat: any, gi: number) => {
       const gid = groups[gi]!;
@@ -198,8 +163,6 @@ export async function fetchPuzzle(id: string) {
       });
     });
   }
-
-  // Fallback: use wordsFlat (assumes 16 items, 4 per group)
   if (!words.length && Array.isArray(x?.wordsFlat) && x.wordsFlat.length >= 16) {
     for (let i = 0; i < 16; i++) {
       const gid = groups[Math.floor(i / 4)]!;
@@ -215,7 +178,6 @@ export async function fetchPuzzle(id: string) {
   };
 }
 
-// Create or update (merge) a user document based on the currently signed-in Auth user.
 export async function upsertUser(u: User) {
   const payload: UserDoc = {
     displayName: u.displayName ?? "Anonymous",
@@ -270,15 +232,12 @@ export async function fetchBrowsePuzzles(max = 60) {
       id: d.id,
       title: x.title ?? "Untitled",
       description: x.description ?? "",
-      // if you only store categories[], derive a label from the first one:
       category: x.category ?? x.categories?.[0]?.title ?? "General",
       difficulty: toTitle((x.difficulty ?? "medium").toString()),
       solveCount: x.solveCount ?? 0,
-      // <-- use author.* which you write on publish
       createdBy: x.author?.name ?? x.author?.email ?? "Anonymous",
       imageUrl: x.imageUrl ?? "",
       isPinned: !!x.isPinned,
-      // prefer publishedAt for display/ordering
       createdAt:
         x.publishedAt?.toDate?.()?.toISOString?.() ??
         x.createdAt?.toDate?.()?.toISOString?.() ??
@@ -286,7 +245,6 @@ export async function fetchBrowsePuzzles(max = 60) {
     };
   };
 
-  // Only published puzzles, newest first.
   try {
     let qRef = query(
       col.puzzles(),
@@ -297,7 +255,6 @@ export async function fetchBrowsePuzzles(max = 60) {
     let snap = await getDocs(qRef);
     return snap.docs.map(mapDoc);
   } catch {
-    // Fallbacks if composite index not ready yet
     try {
       const qRef = query(
         col.puzzles(),
@@ -315,7 +272,6 @@ export async function fetchBrowsePuzzles(max = 60) {
   }
 }
 
-// One-time fetch with pagination support
 export async function fetchActivityPage(max = 20, cursor?: any) {
   let qRef = query(col.activity(), orderBy("createdAt", "desc"), limit(max));
   if (cursor) qRef = query(col.activity(), orderBy("createdAt", "desc"), startAfter(cursor), limit(max));
@@ -324,4 +280,88 @@ export async function fetchActivityPage(max = 20, cursor?: any) {
     docs: snap.docs.map((d) => ({ id: d.id, ...d.data() } as { id: string } & ActivityDoc)),
     last: snap.docs[snap.docs.length - 1],
   };
+}
+
+/* ------------------------------------------------------------------ */
+/* 🔹 Published feed (used by home Recent Activity card)               */
+/* ------------------------------------------------------------------ */
+
+export type FeedPuzzle = {
+  id: string;
+  title: string;
+  publishedAt: any;                 // Firestore Timestamp or ISO string
+  summary?: string;
+  coverImageUrl?: string;
+  author?: { name?: string; uid?: string; email?: string; photoURL?: string };
+};
+
+function mapFeedPuzzle(d: QueryDocumentSnapshot<DocumentData>): FeedPuzzle {
+  const x: any = d.data() || {};
+  return {
+    id: d.id,
+    title: x.title ?? "Untitled",
+    publishedAt: x.publishedAt ?? x.createdAt ?? null,
+    summary: x.summary ?? x.description ?? "",
+    coverImageUrl: x.coverImageUrl ?? x.imageUrl ?? "",
+    author: x.author ?? undefined,
+  };
+}
+
+/**
+ * Fetch newest published puzzles, paged by `publishedAt desc`.
+ * Never throws — falls back to safe queries so the UI won't hang.
+ */
+export async function fetchPublishedPuzzlesPage(
+  pageSize = 5,
+  cursor?: QueryDocumentSnapshot<DocumentData>
+): Promise<{ items: FeedPuzzle[]; lastDoc?: QueryDocumentSnapshot<DocumentData>; hasMore: boolean; }> {
+  try {
+    let qRef = query(
+      collection(db, "puzzles"),
+      where("isPublished", "==", true),
+      orderBy("publishedAt", "desc"),
+      limit(pageSize)
+    );
+    if (cursor) {
+      qRef = query(
+        collection(db, "puzzles"),
+        where("isPublished", "==", true),
+        orderBy("publishedAt", "desc"),
+        startAfter(cursor),
+        limit(pageSize)
+      );
+    }
+    const snap = await getDocs(qRef);
+    const items = snap.docs.map(mapFeedPuzzle);
+    return {
+      items,
+      lastDoc: snap.docs[snap.docs.length - 1],
+      hasMore: snap.size === pageSize,
+    };
+  } catch (e) {
+    // Fallback if composite index is missing or publishedAt not set on some docs:
+    try {
+      const qRef = query(collection(db, "puzzles"), orderBy("publishedAt", "desc"), limit(pageSize * 3));
+      const snap = await getDocs(qRef);
+      const filtered = snap.docs
+        .map(mapFeedPuzzle)
+        .filter((p) => (p as any)?.isPublished ?? true) // many docs will still have isPublished set
+        .slice(0, pageSize);
+      return { items: filtered, lastDoc: undefined, hasMore: false };
+    } catch {
+      // Last-resort: simple read, client-side sort
+      const qRef = query(collection(db, "puzzles"), limit(pageSize * 5));
+      const snap = await getDocs(qRef);
+      const all = snap.docs.map(mapFeedPuzzle);
+      const sorted = all
+        .filter((x: any) => x && ((x as any).isPublished ?? true))
+        .sort((a: any, b: any) => {
+          const ad = a.publishedAt?.toDate ? a.publishedAt.toDate() : new Date(a.publishedAt ?? 0);
+          const bd = b.publishedAt?.toDate ? b.publishedAt.toDate() : new Date(b.publishedAt ?? 0);
+          return bd.getTime() - ad.getTime();
+        })
+        .slice(0, pageSize);
+      return { items: sorted, lastDoc: undefined, hasMore: false };
+    }
+  }
 }
