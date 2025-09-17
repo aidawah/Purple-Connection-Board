@@ -337,52 +337,57 @@
     class:animate-puzzle-shake={shaking}
   >
     {#each order as id (id)}
-      {@const w = words.find((w) => w.id === id)}
-      {#if w}
-        <!-- Flip wrapper lives in GameBoard (kept exactly as before) -->
-        <button
-          type="button"
-          on:click={() => toggleSelect(id)}
-          class="relative w-full h-full rounded-xl focus:outline-none group
-                 [perspective:1000px] select-none"
-          aria-pressed={selection.includes(id)}
-          disabled={resolving || solved.includes(w.groupId)}
-          data-locked={solved.includes(w.groupId)}
-          data-selected={selection.includes(id)}
-        >
-          <div
-            class="relative w-full h-[70px] sm:h-[92px] md:h-[100px]
-                   transition-transform duration-300
-                   [transform-style:preserve-3d]
-                   group-data-[locked=true]:[transform:rotateY(180deg)]"
-          >
-            <!-- FRONT: PuzzleCard (we pass the resolved title as its label too) -->
-            <div class="absolute inset-0 [backface-visibility:hidden]">
-              <PuzzleCard
-                text={w.text}
-                wordId={id}
-                selected={selection.includes(id)}
-                locked={solved.includes(w.groupId)}
-                label={titleFor(w.groupId)}
-                disabled={resolving}
-              />
-            </div>
+  {@const w = words.find((w) => w.id === id)}
+  {#if w}
+    <button
+      type="button"
+      on:click={() => toggleSelect(id)}
+      class="relative w-full h-full rounded-xl focus:outline-none group
+             [perspective:1000px] select-none"
+      aria-pressed={selection.includes(id)}
+      disabled={resolving || solved.includes(w.groupId)}
+      data-locked={solved.includes(w.groupId)}
+      data-selected={selection.includes(id)}
 
-            <!-- BACK: teal with Firestore category title -->
-            <div
-              class="absolute inset-0 [backface-visibility:hidden]
-                     [transform:rotateY(180deg)]
-                     rounded-xl border border-teal-600
-                     bg-teal-500 text-white
-                     grid place-items-center px-2
-                     text-sm sm:text-base font-semibold"
-            >
-              {titleFor(w.groupId)}
-            </div>
-          </div>
-        </button>
-      {/if}
-    {/each}
+      
+      data-word={w.text}
+      data-id={id}
+      data-group={w.groupId}
+    >
+      <div
+        class="relative w-full h-[70px] sm:h-[92px] md:h-[100px]
+               transition-transform duration-300
+               [transform-style:preserve-3d]
+               group-data-[locked=true]:[transform:rotateY(180deg)]"
+      >
+        <!-- FRONT -->
+        <div class="absolute inset-0 [backface-visibility:hidden]">
+          <PuzzleCard
+            text={w.text}
+            wordId={id}
+            selected={selection.includes(id)}
+            locked={solved.includes(w.groupId)}
+            label={titleFor(w.groupId)}
+            disabled={resolving}
+          />
+        </div>
+
+        <!-- BACK -->
+        <div
+          class="absolute inset-0 [backface-visibility:hidden]
+                 [transform:rotateY(180deg)]
+                 rounded-xl border border-teal-600
+                 bg-teal-500 text-white
+                 grid place-items-center px-2
+                 text-sm sm:text-base font-semibold"
+        >
+          {titleFor(w.groupId)}
+        </div>
+      </div>
+    </button>
+  {/if}
+{/each}
+
   </div>
 
   {#if showRing}

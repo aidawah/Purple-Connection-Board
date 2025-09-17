@@ -19,7 +19,7 @@
   } from 'firebase/firestore';
 
   const BRAND = '#14b8a6';
-  const EXAMPLE_ROUTE = '/example'; // TODO: point this to your actual example route
+  const EXAMPLE_ROUTE = '/gameboard/example'; // TODO: point this to your actual example route
 
   /** ── UI types ─────────────────────────────────────────────────────────── */
   type FeedItem = {
@@ -432,7 +432,7 @@
     </p>
 
     <a
-      href="/example"
+      href="gameboard/example"
       class="block w-full rounded-md bg-[color:var(--brand)] px-4 py-2 text-center text-sm font-semibold text-white shadow-sm transition hover:brightness-95 focus:outline-none focus:ring-2 focus:ring-[color:var(--brand)]/40"
     >
       Play Example Game
