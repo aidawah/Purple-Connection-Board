@@ -408,6 +408,26 @@
             {/each}
           {/if}
         </div>
+                <!-- Example Game Box -->
+<div class="mt-6 rounded-xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+  <div class="border-b border-zinc-200 px-6 py-5 dark:border-zinc-800">
+    <h2 class="text-xl font-semibold text-zinc-900 dark:text-zinc-100">Example Game</h2>
+    <p class="mt-1 text-sm text-zinc-600 dark:text-zinc-400">Try our demo puzzle to learn how it works</p>
+  </div>
+
+  <div class="p-6">
+    <p class="mb-4 text-sm text-zinc-600 dark:text-zinc-400">
+      This is a sample puzzle available anytime. Click below to explore the game board.
+    </p>
+
+    <a
+      href="gameboard/example"
+      class="block w-full rounded-md bg-[color:var(--brand)] px-4 py-2 text-center text-sm font-semibold text-white shadow-sm transition hover:brightness-95 focus:outline-none focus:ring-2 focus:ring-[color:var(--brand)]/40"
+    >
+      Play Example Game
+    </a>
+  </div>
+</div>
       </div>
     </div>
   </div>
