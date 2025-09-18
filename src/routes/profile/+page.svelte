@@ -335,7 +335,7 @@ async function togglePublishPuzzle(p: MyPuzzle) {
   try {
     publishBusy = p.id;
 
-    const next = !p.isPublished; // true → publish, false → unpublish
+    const next = !p.isPublished; // true = publish, false = unpublish
     const ref = ffs.doc(db, 'puzzles', p.id);
 
     const payload: any = {
@@ -345,7 +345,7 @@ async function togglePublishPuzzle(p: MyPuzzle) {
     };
 
     if (next) {
-      // going published: set publishedAt and (re)ensure author is present
+      // publishing: must set server time so rules pass
       payload.publishedAt = ffs.serverTimestamp();
       payload.author = {
         uid: currentUID,
@@ -353,15 +353,13 @@ async function togglePublishPuzzle(p: MyPuzzle) {
         name: profile.name ?? '',
         photoURL: profile.photoURL ?? ''
       };
-    } else {
-      // going unpublished: remove publishedAt (or keep it if you prefer)
-      payload.publishedAt = ffs.deleteField ? ffs.deleteField() : null;
     }
+    // UNPUBLISHING: do NOT touch publishedAt (rules require it stays unchanged)
 
     await ffs.setDoc(ref, payload, { merge: true });
 
-    // Optimistic UI update
-    myPuzzles = myPuzzles.map(x =>
+    // Optimistic UI
+    myPuzzles = myPuzzles.map((x) =>
       x.id === p.id ? { ...x, isPublished: next, status: payload.status } : x
     );
 
