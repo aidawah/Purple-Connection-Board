@@ -2,6 +2,7 @@
   import { onMount, onDestroy } from 'svelte';
   import { browser } from '$app/environment';
   import { goto } from '$app/navigation';
+  import Share from "$lib/components/Share.svelte";
 
   // ---- theme + data toggles ----
   const BRAND = '#14b8a6';
@@ -614,8 +615,8 @@ async function togglePublishPuzzle(p: MyPuzzle) {
     {#if myPuzzles.length > 0}
       <div class="grid grid-cols-1 gap-6 p-6 sm:grid-cols-2">
         {#each myPuzzles as p}
-          <div class="overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-sm transition hover:shadow-md dark:border-zinc-800 dark:bg-zinc-900">
-            <div class="relative flex aspect-video items-center justify-center bg-gradient-to-br from-[color:var(--brand)]/10 to-emerald-200/20 dark:from-[color:var(--brand)]/20 dark:to-emerald-900/10">
+          <div class="rounded-xl border border-zinc-200 bg-white shadow-sm transition hover:shadow-md dark:border-zinc-800 dark:bg-zinc-900">
+            <div class="relative flex aspect-video items-center justify-center overflow-hidden rounded-t-xl bg-gradient-to-br from-[color:var(--brand)]/10 to-emerald-200/20 dark:from-[color:var(--brand)]/20 dark:to-emerald-900/10">
               {#if p.imageUrl}
                 <img src={p.imageUrl} alt={p.title} class="h-full w-full object-cover" loading="lazy" />
               {/if}
@@ -649,26 +650,48 @@ async function togglePublishPuzzle(p: MyPuzzle) {
                 <span>{p.solveCount ?? 0} solves</span>
               </div>
 
-              <div class="flex items-center justify-center gap-3">
-                <a href={"/gameboard/" + encodeURIComponent(p.id)}
-                   data-sveltekit-preload-data="hover"
-                   data-sveltekit-preload-code="hover"
-                   class="rounded-md border border-[color:var(--brand)]/30 px-3 py-2 text-sm font-medium text-[color:var(--brand)] transition hover:bg-[color:var(--brand)]/10 focus:outline-none focus:ring-2 focus:ring-[color:var(--brand)]/40">
-                  Play
-                </a>
-                <a href={"/edit/" + encodeURIComponent(p.id)}
-                   class="rounded-md bg-[color:var(--brand)] px-3 py-2 text-sm font-semibold text-white shadow-sm transition hover:brightness-95 focus:outline-none focus:ring-2 focus:ring-[color:var(--brand)]/40">
-                  Edit
-                </a>
+<!-- Button row -->
+
+<div class="mt-4 grid grid-cols-[1fr_1fr_1fr_1.6fr] gap-2 items-stretch [&>*]:min-w-0">
+  <a
+    href={"/gameboard/" + encodeURIComponent(p.id)}
+    class="flex h-10 w-full items-center justify-center rounded-md border border-[color:var(--brand)]/30 text-sm font-medium text-[color:var(--brand)] transition hover:bg-[color:var(--brand)]/10"
+  >Play</a>
+
+  <a
+    href={"/edit/" + encodeURIComponent(p.id)}
+    class="flex h-10 w-full items-center justify-center rounded-md bg-[color:var(--brand)] text-sm font-semibold text-white shadow-sm transition hover:brightness-95"
+  >Edit</a>
+
+  <Share
+    puzzleId={p.id}
+    puzzleTitle={p.title}
+    fullWidth
+  />
+
 <button
   type="button"
   on:click={() => togglePublishPuzzle(p)}
   disabled={publishBusy === p.id}
-  class="rounded-md border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-700 transition hover:bg-zinc-50 focus:outline-none focus:ring-2 focus:ring-[color:var(--brand)]/40 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800 disabled:opacity-60 disabled:cursor-not-allowed">
+  class="flex h-10 w-full items-center justify-center whitespace-nowrap
+         rounded-md border border-zinc-300 px-3 text-sm font-medium text-zinc-700
+         transition hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-200
+         dark:hover:bg-zinc-800 disabled:opacity-60"
+  title={p.isPublished ? 'Unpublish' : 'Publish'}
+>
   {publishBusy === p.id ? 'Updating…' : (p.isPublished ? 'Unpublish' : 'Publish')}
 </button>
 
-              </div>
+
+
+</div>
+
+
+
+
+
+
+
             </div>
           </div>
         {/each}
