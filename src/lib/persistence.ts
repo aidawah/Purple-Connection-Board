@@ -5,6 +5,13 @@ import { db, auth } from "$lib/firebase"; // make sure firebase.ts exports { db,
 import type { User } from "firebase/auth";
 
 /* =========================
+ * Demo / blocklist guard
+ * =======================*/
+// Add ids here that should never persist (local or cloud)
+const PERSIST_BLOCKLIST = new Set(["example"]);
+const isBlocked = (puzzleId: string) => PERSIST_BLOCKLIST.has(String(puzzleId));
+
+/* =========================
  * Types
  * =======================*/
 export type RunSnapshot = {
@@ -24,13 +31,13 @@ export type RunSnapshot = {
  * LocalStorage helpers
  * =======================*/
 function localSaveRun(puzzleId: string, snapshot: RunSnapshot) {
-  if (!browser) return;
+  if (!browser || isBlocked(puzzleId)) return;
   try {
     localStorage.setItem(`connections:${puzzleId}`, JSON.stringify(snapshot));
   } catch {}
 }
 function localLoadRun(puzzleId: string): RunSnapshot | null {
-  if (!browser) return null;
+  if (!browser || isBlocked(puzzleId)) return null;
   try {
     const raw = localStorage.getItem(`connections:${puzzleId}`);
     return raw ? (JSON.parse(raw) as RunSnapshot) : null;
@@ -80,6 +87,9 @@ function runDoc(uid: string, puzzleId: string) {
  * Runs
  * =======================*/
 export async function saveRun(puzzleId: string, snapshot: RunSnapshot) {
+  // Blocked ids: no local or cloud persistence
+  if (isBlocked(puzzleId)) return;
+
   // Always mirror to local first for instant resume
   localSaveRun(puzzleId, snapshot);
 
@@ -118,6 +128,9 @@ export async function saveRun(puzzleId: string, snapshot: RunSnapshot) {
 }
 
 export async function loadRun(puzzleId: string): Promise<RunSnapshot | null> {
+  // Blocked ids: never load (pretend no state)
+  if (isBlocked(puzzleId)) return null;
+
   if (!browser) return localLoadRun(puzzleId);
 
   const user = await ensureUser();
@@ -152,6 +165,9 @@ export async function loadRun(puzzleId: string): Promise<RunSnapshot | null> {
 }
 
 export async function clearRun(puzzleId: string) {
+  // Blocked ids: do nothing
+  if (isBlocked(puzzleId)) return;
+
   localSaveRun(puzzleId, { ts: Date.now(), run: { completed: false } });
 
   if (!browser) return;
@@ -163,4 +179,3 @@ export async function clearRun(puzzleId: string) {
     console.warn("[persist:clearRun] Firestore write failed:", e);
   }
 }
-
