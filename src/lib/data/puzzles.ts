@@ -401,11 +401,11 @@ export const puzzles: Puzzle[] = [
 ];
 
 export function getPuzzleById(id: number): Puzzle | undefined {
-	return puzzles.find(puzzle => puzzle.id === id);
+	return puzzles.find((puzzle) => puzzle.id === id);
 }
 
 export function getFeaturedPuzzles(): Puzzle[] {
-	return puzzles.filter(puzzle => puzzle.isPinned).concat(
-		puzzles.filter(puzzle => !puzzle.isPinned).slice(0, 2)
-	);
+	return puzzles
+		.filter((puzzle) => puzzle.isPinned)
+		.concat(puzzles.filter((puzzle) => !puzzle.isPinned).slice(0, 2));
 }

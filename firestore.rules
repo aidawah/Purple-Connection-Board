@@ -8,6 +8,11 @@ service cloud.firestore {
     match /puzzles/{doc} {
       allow read: if true;
     }
+    
+    // Users can read/write their own user document
+    match /users/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
 
     // (Optional) keep writes open during dev; remove for prod
     match /{document=**} {

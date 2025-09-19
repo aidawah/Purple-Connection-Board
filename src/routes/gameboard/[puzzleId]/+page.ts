@@ -112,9 +112,9 @@ export const load: PageLoad = async ({ params }) => {
   const id = params.puzzleId;
   if (!id) throw error(400, 'Missing puzzleId');
 
-  if (id === 'example') {
-    return { id, puzzle: DEMO };
-  }
+	if (id === 'example') {
+		return { id, puzzle: DEMO };
+	}
 
   const raw = await fetchPuzzle(id); // your existing util
   if (!raw) throw error(404, 'Puzzle not found');
@@ -133,5 +133,5 @@ export const load: PageLoad = async ({ params }) => {
   // Guard: if no words, this is unusable
   if (!puzzle.words?.length) throw error(404, 'Puzzle not found');
 
-  return { id, puzzle };
+	return { id, puzzle };
 };

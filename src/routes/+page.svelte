@@ -21,14 +21,14 @@
     avatar?: string;
   };
 
-  type FeaturedPuzzle = {
-    id: string;
-    title: string;
-    difficulty: 'Easy' | 'Medium' | 'Hard' | string;
-    solveCount: number;
-    category: string;
-    isPinned: boolean;
-  };
+	type FeaturedPuzzle = {
+		id: string;
+		title: string;
+		difficulty: 'Easy' | 'Medium' | 'Hard' | string;
+		solveCount: number;
+		category: string;
+		isPinned: boolean;
+	};
 
   let feedItems: FeedItem[] = [];
   let featuredPuzzles: FeaturedPuzzle[] = [];
@@ -53,20 +53,24 @@
       .slice(0, 2)
       .join('');
 
-  function getDifficultyColor(difficulty: string) {
-    switch (difficulty) {
-      case 'Easy':   return 'text-green-600 dark:text-green-400';
-      case 'Medium': return 'text-yellow-600 dark:text-yellow-400';
-      case 'Hard':   return 'text-red-600 dark:text-red-400';
-      default:       return 'text-zinc-600 dark:text-zinc-400';
-    }
-  }
+	function getDifficultyColor(difficulty: string) {
+		switch (difficulty) {
+			case 'Easy':
+				return 'text-green-600 dark:text-green-400';
+			case 'Medium':
+				return 'text-yellow-600 dark:text-yellow-400';
+			case 'Hard':
+				return 'text-red-600 dark:text-red-400';
+			default:
+				return 'text-zinc-600 dark:text-zinc-400';
+		}
+	}
 
-  function icon(type: FeedItem['type']) {
-    return type === 'puzzle_created'
-      ? `<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-[color:var(--brand)]" viewBox="0 0 24 24" fill="currentColor"><path d="M13 3a2 2 0 0 1 2 2v1h2.25A1.75 1.75 0 0 1 19 7.75V11h-1.25a1.75 1.75 0 1 0 0 3.5H19v3.75A1.75 1.75 0 0 1 17.25 20H13v-1.25a1.75 1.75 0 1 0-3.5 0V20H6.75A1.75 1.75 0 0 1 5 18.25V14h1.25a1.75 1.75 0 1 0 0-3.5H5V6.75A1.75 1.75 0 0 1 6.75 5H10V4a1 1 0 0 1 1-1h2Z"/></svg>`
-      : `<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-[color:var(--brand)]" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2.25a9.75 9.75 0 1 0 0 19.5 9.75 9.75 0 0 0 0-19.5Zm4.28 7.72a.75.75 0 0 1 0 1.06l-5 5a.75.75 0 0 1-1.06 0l-2.25-2.25a.75.75 0 1 1 1.06-1.06l1.72 1.72 4.47-4.47a.75.75 0 0 1 1.06 0Z"/></svg>`;
-  }
+	function icon(type: FeedItem['type']) {
+		return type === 'puzzle_created'
+			? `<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-[color:var(--brand)]" viewBox="0 0 24 24" fill="currentColor"><path d="M13 3a2 2 0 0 1 2 2v1h2.25A1.75 1.75 0 0 1 19 7.75V11h-1.25a1.75 1.75 0 1 0 0 3.5H19v3.75A1.75 1.75 0 0 1 17.25 20H13v-1.25a1.75 1.75 0 1 0-3.5 0V20H6.75A1.75 1.75 0 0 1 5 18.25V14h1.25a1.75 1.75 0 1 0 0-3.5H5V6.75A1.75 1.75 0 0 1 6.75 5H10V4a1 1 0 0 1 1-1h2Z"/></svg>`
+			: `<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-[color:var(--brand)]" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2.25a9.75 9.75 0 1 0 0 19.5 9.75 9.75 0 0 0 0-19.5Zm4.28 7.72a.75.75 0 0 1 0 1.06l-5 5a.75.75 0 0 1-1.06 0l-2.25-2.25a.75.75 0 1 1 1.06-1.06l1.72 1.72 4.47-4.47a.75.75 0 0 1 1.06 0Z"/></svg>`;
+	}
 
   const fmt = (ts: any) => {
     try {
@@ -81,10 +85,10 @@
     const actorObj = x.actor ?? {};
     const userName = actorObj.displayName ?? actorObj.name ?? actorObj.uid ?? 'Unknown';
 
-    const ts =
-      x.createdAt?.toDate?.()?.toLocaleString?.() ??
-      x.updatedAt?.toDate?.()?.toLocaleString?.() ??
-      'just now';
+		const ts =
+			x.createdAt?.toDate?.()?.toLocaleString?.() ??
+			x.updatedAt?.toDate?.()?.toLocaleString?.() ??
+			'just now';
 
     const action =
       x.action ??
@@ -112,18 +116,18 @@
     };
   }
 
-  function mapPuzzle(d: QueryDocumentSnapshot<DocumentData>): FeaturedPuzzle {
-    const x = d.data() as any;
-    const toTitle = (s: string) => (s ? s[0].toUpperCase() + s.slice(1).toLowerCase() : s);
-    return {
-      id: d.id,
-      title: x.title ?? 'Untitled',
-      difficulty: toTitle((x.difficulty ?? 'Medium').toString()),
-      solveCount: x.solveCount ?? 0,
-      category: x.category ?? 'General',
-      isPinned: !!x.isPinned
-    };
-  }
+	function mapPuzzle(d: QueryDocumentSnapshot<DocumentData>): FeaturedPuzzle {
+		const x = d.data() as any;
+		const toTitle = (s: string) => (s ? s[0].toUpperCase() + s.slice(1).toLowerCase() : s);
+		return {
+			id: d.id,
+			title: x.title ?? 'Untitled',
+			difficulty: toTitle((x.difficulty ?? 'Medium').toString()),
+			solveCount: x.solveCount ?? 0,
+			category: x.category ?? 'General',
+			isPinned: !!x.isPinned
+		};
+	}
 
   async function hydrateTitles(items: FeedItem[]) {
     const needing = items.filter(i => i.puzzleId && !i.puzzleTitle).map(i => i.puzzleId!) as string[];
@@ -132,8 +136,8 @@
     const chunk = <T,>(arr: T[], size: number) =>
       Array.from({ length: Math.ceil(arr.length / size) }, (_, k) => arr.slice(k * size, k * size + size));
 
-    const chunks = chunk(needing, 10);
-    const titleMap = new Map<string, string>();
+		const chunks = chunk(needing, 10);
+		const titleMap = new Map<string, string>();
 
     for (const ids of chunks) {
       const qRef = query(collection(db, 'puzzles'), where(documentId(), 'in', ids));
@@ -155,15 +159,16 @@
 
   let unsubRecent: () => void;
 
-  async function loadInitial() {
-    if (!browser) return;
-    projectId = app?.options?.projectId ?? '';
-    document.documentElement.style.setProperty('--brand', BRAND);
+	async function loadInitial() {
+		if (!browser) return;
+		projectId = app?.options?.projectId ?? '';
+		document.documentElement.style.setProperty('--brand', BRAND);
 
-    // Featured (sidebar)
+    // Featured (sidebar) - only show published puzzles
     try {
       const puzzlesQ = query(
         collection(db, 'puzzles'),
+        where('isPublished', '==', true),
         orderBy('isPinned', 'desc'),
         orderBy('createdAt', 'desc'),
         limit(12)
@@ -195,10 +200,10 @@
     });
   }
 
-  async function loadMoreActivity(initial = false) {
-    if (loadingMore || loadingFeed || noMore) return;
-    loadingMore = !initial;
-    loadingFeed = initial;
+	async function loadMoreActivity(initial = false) {
+		if (loadingMore || loadingFeed || noMore) return;
+		loadingMore = !initial;
+		loadingFeed = initial;
 
     try {
       let qRef = query(collection(db, 'activity'), orderBy('createdAt', 'desc'), limit(PAGE_SIZE));
@@ -212,12 +217,12 @@
       const items = snap.docs.map(mapActivity);
       await hydrateTitles(items);
 
-      if (initial) {
-        feedItems = items;
-      } else {
-        const existing = new Set(feedItems.map((x) => x.id));
-        feedItems = [...feedItems, ...items.filter((x) => !existing.has(x.id))];
-      }
+			if (initial) {
+				feedItems = items;
+			} else {
+				const existing = new Set(feedItems.map((x) => x.id));
+				feedItems = [...feedItems, ...items.filter((x) => !existing.has(x.id))];
+			}
 
       lastFeedDoc = snap.docs[snap.docs.length - 1] ?? lastFeedDoc;
       if (snap.size < PAGE_SIZE) noMore = true;
@@ -247,32 +252,38 @@
     loadingMoreLatest = false;
   }
 
-  onMount(loadInitial);
-  onDestroy(() => unsubRecent?.());
+	onMount(loadInitial);
+	onDestroy(() => unsubRecent?.());
 </script>
 
 <svelte:head>
-  <title>Purple Connection Board</title>
+	<title>Purple Connection Board</title>
 </svelte:head>
 
 <main class="mx-auto max-w-7xl px-4 pt-10 md:pt-12">
-  {#if projectId}
-    <div class="mb-4 text-xs text-zinc-500 dark:text-zinc-400">
-      project: <code>{projectId}</code>
-      · activity: <code>{feedItems.length}</code>
-      · featured: <code>{featuredPuzzles.length}</code>
-    </div>
-  {/if}
+	{#if projectId}
+		<div class="mb-4 text-xs text-zinc-500 dark:text-zinc-400">
+			project: <code>{projectId}</code>
+			· activity: <code>{feedItems.length}</code>
+			· featured: <code>{featuredPuzzles.length}</code>
+		</div>
+	{/if}
 
-  <section class="mb-8 text-center">
-    <div class="mx-auto mb-4 h-1 w-24 rounded-full [background:color:var(--brand)]/70 dark:[background:color:var(--brand)]/60"></div>
-    <h1 class="mb-3 text-3xl font-extrabold tracking-tight md:text-5xl">
-      <span class="bg-gradient-to-r from-[color:var(--brand)] via-[color:var(--brand)] to-emerald-500 bg-clip-text text-transparent">
-        Purple Connection Board
-      </span>
-    </h1>
-    <p class="text-lg text-zinc-600 dark:text-zinc-400">Connect, Create, and Challenge Your Mind!</p>
-  </section>
+	<section class="mb-8 text-center">
+		<div
+			class="mx-auto mb-4 h-1 w-24 rounded-full [background:color:var(--brand)]/70 dark:[background:color:var(--brand)]/60"
+		></div>
+		<h1 class="mb-3 text-3xl font-extrabold tracking-tight md:text-5xl">
+			<span
+				class="bg-gradient-to-r from-[color:var(--brand)] via-[color:var(--brand)] to-emerald-500 bg-clip-text text-transparent"
+			>
+				Purple Connection Board
+			</span>
+		</h1>
+		<p class="text-lg text-zinc-600 dark:text-zinc-400">
+			Connect, Create, and Challenge Your Mind!
+		</p>
+	</section>
 
   <div class="grid grid-cols-1 gap-8 lg:grid-cols-3">
     <!-- Recent Activity -->
@@ -350,23 +361,23 @@
 
 
 
-        <div class="border-t border-zinc-200 p-6 text-center dark:border-zinc-800">
-          <button
-            class="rounded-md border border-[color:var(--brand)]/30 px-4 py-2 text-sm font-medium text-[color:var(--brand)] transition-colors hover:bg-[color:var(--brand)]/10 focus:outline-none focus:ring-2 focus:ring-[color:var(--brand)]/40 disabled:opacity-50"
-            on:click={() => loadMoreActivity()}
-            disabled={loadingMore || noMore}
-          >
-            {#if noMore}
-              No more activity
-            {:else if loadingMore}
-              Loading…
-            {:else}
-              Load More Activity
-            {/if}
-          </button>
-        </div>
-      </div>
-    </div>
+				<div class="border-t border-zinc-200 p-6 text-center dark:border-zinc-800">
+					<button
+						class="rounded-md border border-[color:var(--brand)]/30 px-4 py-2 text-sm font-medium text-[color:var(--brand)] transition-colors hover:bg-[color:var(--brand)]/10 focus:ring-2 focus:ring-[color:var(--brand)]/40 focus:outline-none disabled:opacity-50"
+						on:click={() => loadMoreActivity()}
+						disabled={loadingMore || noMore}
+					>
+						{#if noMore}
+							No more activity
+						{:else if loadingMore}
+							Loading…
+						{:else}
+							Load More Activity
+						{/if}
+					</button>
+				</div>
+			</div>
+		</div>
 
     <!-- Featured / Pinned -->
     <div class="lg:col-span-1">
@@ -376,27 +387,43 @@
           <p class="mt-1 text-sm text-zinc-600 dark:text-zinc-400">Popular and pinned challenges</p>
         </div>
 
-        <div class="space-y-4 p-6">
-          {#if featuredPuzzles.length === 0}
-            <div class="text-sm text-zinc-500 dark:text-zinc-400">No featured puzzles yet.</div>
-          {:else}
-            {#each featuredPuzzles as puzzle}
-              <div class="cursor-pointer rounded-lg border border-zinc-200 p-4 transition-colors hover:border-[color:var(--brand)]/50 hover:bg-[color:var(--brand)]/5 dark:border-zinc-800 dark:hover:bg-[color:var(--brand)]/10">
-                <div class="mb-2 flex items-start justify-between">
-                  <h3 class="text-sm font-medium leading-tight text-zinc-900 dark:text-zinc-100">{puzzle.title}</h3>
-                  {#if puzzle.isPinned}
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="h-4 w-4 text-[#14b8a6] rotate-[-20deg]" aria-label="Pinned">
-                      <circle cx="12" cy="6" r="3" />
-                      <rect x="11" y="9" width="2" height="8" rx="1" />
-                      <path d="M12 17l-2 5h4l-2-5z" />
-                    </svg>
-                  {/if}
-                </div>
+				<div class="space-y-4 p-6">
+					{#if featuredPuzzles.length === 0}
+						<div class="text-sm text-zinc-500 dark:text-zinc-400">No featured puzzles yet.</div>
+					{:else}
+						{#each featuredPuzzles as puzzle}
+							<div
+								class="cursor-pointer rounded-lg border border-zinc-200 p-4 transition-colors hover:border-[color:var(--brand)]/50 hover:bg-[color:var(--brand)]/5 dark:border-zinc-800 dark:hover:bg-[color:var(--brand)]/10"
+							>
+								<div class="mb-2 flex items-start justify-between">
+									<h3 class="text-sm leading-tight font-medium text-zinc-900 dark:text-zinc-100">
+										{puzzle.title}
+									</h3>
+									{#if puzzle.isPinned}
+										<svg
+											xmlns="http://www.w3.org/2000/svg"
+											viewBox="0 0 24 24"
+											fill="currentColor"
+											class="h-4 w-4 rotate-[-20deg] text-[#14b8a6]"
+											aria-label="Pinned"
+										>
+											<circle cx="12" cy="6" r="3" />
+											<rect x="11" y="9" width="2" height="8" rx="1" />
+											<path d="M12 17l-2 5h4l-2-5z" />
+										</svg>
+									{/if}
+								</div>
 
-                <div class="mb-2 flex items-center justify-between text-xs text-zinc-600 dark:text-zinc-400">
-                  <span class="rounded px-2 py-1 ring-1 ring-inset ring-[color:var(--brand)]/30">{puzzle.category}</span>
-                  <span class="{getDifficultyColor(puzzle.difficulty)} font-medium">{puzzle.difficulty}</span>
-                </div>
+								<div
+									class="mb-2 flex items-center justify-between text-xs text-zinc-600 dark:text-zinc-400"
+								>
+									<span class="rounded px-2 py-1 ring-1 ring-[color:var(--brand)]/30 ring-inset"
+										>{puzzle.category}</span
+									>
+									<span class="{getDifficultyColor(puzzle.difficulty)} font-medium"
+										>{puzzle.difficulty}</span
+									>
+								</div>
 
                 <div class="flex items-center justify-between">
                   <span class="text-xs text-zinc-500 dark:text-zinc-400">{puzzle.solveCount} solves</span>
@@ -415,10 +442,10 @@
     <p class="mt-1 text-sm text-zinc-600 dark:text-zinc-400">Try our demo puzzle to learn how it works</p>
   </div>
 
-  <div class="p-6">
-    <p class="mb-4 text-sm text-zinc-600 dark:text-zinc-400">
-      This is a sample puzzle available anytime. Click below to explore the game board.
-    </p>
+					<div class="p-6">
+						<p class="mb-4 text-sm text-zinc-600 dark:text-zinc-400">
+							This is a sample puzzle available anytime. Click below to explore the game board.
+						</p>
 
     <a
       href="gameboard/example"

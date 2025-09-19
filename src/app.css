@@ -5,58 +5,83 @@
 /* Make Tailwind's `dark:` utilities respond to .dark on <html> */
 @custom-variant dark (&:where(.dark, .dark *));
 
-@theme { --color-brand: #20e3c3; }
+@theme {
+	--color-brand: #20e3c3;
+}
 
-:root { color-scheme: light; }
-.dark  { color-scheme: dark; }
+:root {
+	color-scheme: light;
+}
+.dark {
+	color-scheme: dark;
+}
 
-html, body, #svelte { height: 100%; }
+html,
+body,
+#svelte {
+	height: 100%;
+}
 
 /* Prevents the bottom nav from covering content on small screens. */
 @media (max-width: 767px) {
-  main { padding-bottom: 4rem; }
+	main {
+		padding-bottom: 4rem;
+	}
 }
 
 /* --- Connection puzzle: shake animation (safe, additive) --- */
 @theme {
-  @keyframes puzzle-shake {
-    10%, 90% { transform: translateX(-1px); }
-    20%, 80% { transform: translateX( 2px); }
-    30%, 50%, 70% { transform: translateX(-4px); }
-    40%, 60% { transform: translateX( 4px); }
-  }
+	@keyframes puzzle-shake {
+		10%,
+		90% {
+			transform: translateX(-1px);
+		}
+		20%,
+		80% {
+			transform: translateX(2px);
+		}
+		30%,
+		50%,
+		70% {
+			transform: translateX(-4px);
+		}
+		40%,
+		60% {
+			transform: translateX(4px);
+		}
+	}
 }
 
 /* Utility you can toggle with class:animate-puzzle-shake={shaking} */
 @utility animate-puzzle-shake {
-  animation: puzzle-shake .35s both;
-  will-change: transform;
+	animation: puzzle-shake 0.35s both;
+	will-change: transform;
 }
 
 /* --- Connection puzzle: 3D flip utilities (Tailwind v4 style) --- */
 @utility preserve-3d {
-  transform-style: preserve-3d;
-  -webkit-transform-style: preserve-3d;
+	transform-style: preserve-3d;
+	-webkit-transform-style: preserve-3d;
 }
 
 @utility backface-hidden {
-  backface-visibility: hidden;
-  -webkit-backface-visibility: hidden;
+	backface-visibility: hidden;
+	-webkit-backface-visibility: hidden;
 }
 
 @utility perspective-1200 {
-  perspective: 1200px;
-  -webkit-perspective: 1200px;
+	perspective: 1200px;
+	-webkit-perspective: 1200px;
 }
 
 @utility rotate-y-0 {
-  transform: rotateY(0deg);
+	transform: rotateY(0deg);
 }
 
 @utility rotate-y-180 {
-  transform: rotateY(180deg);
+	transform: rotateY(180deg);
 }
 
 @utility will-change-transform {
-  will-change: transform;
+	will-change: transform;
 }
