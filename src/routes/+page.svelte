@@ -187,6 +187,22 @@
     try {
       const puzzlesQ = query(
         collection(db, 'puzzles'),
+        where('isPublished', '==', true),
+        orderBy('isPinned', 'desc'),
+        orderBy('createdAt', 'desc'),
+        limit(12)
+      );
+      const snap = await getDocs(puzzlesQ);
+      featuredPuzzles = snap.docs.map(mapPuzzle);
+    } catch (e) {
+      console.warn('Featured load failed:', e);
+      featuredPuzzles = [];
+    }
+    // Featured - only show published puzzles
+    try {
+      const puzzlesQ = query(
+        collection(db, 'puzzles'),
+        where('isPublished', '==', true),
         orderBy('isPinned', 'desc'),
         orderBy('createdAt', 'desc'),
         limit(12)

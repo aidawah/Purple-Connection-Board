@@ -10,15 +10,13 @@
   // ---- types ----
   type Profile = {
     uid?: string;
-    name: string;
+    displayName: string;
     email: string;
     photoURL?: string;
     bio?: string;
-    theme: 'light'|'dark'|'system';
-    publicProfile: boolean;
-    notifications: { product: boolean; community: boolean; marketing: boolean; };
-    socials: { twitter: string; github: string; website: string; };
-    stats: { puzzlesCreated: number; puzzlesSolved: number; streakDays: number; };
+    settings: { darkMode: boolean; emailNotifications: boolean; };
+    stats: { puzzlesCreated: number; puzzlesPlayed: number; puzzlesCompleted: number; };
+    pinned: string[];
   };
 
 type MyPuzzle = {
@@ -47,15 +45,13 @@ type MyPuzzle = {
 
   // Start with empty/neutral values; Firebase will hydrate everything.
   let profile: Profile = {
-    name: '',
+    displayName: '',
     email: '',
     photoURL: '',
     bio: '',
-    theme: 'system',
-    publicProfile: true,
-    notifications: { product: true, community: true, marketing: false },
-    socials: { twitter: '', github: '', website: '' },
-    stats: { puzzlesCreated: 0, puzzlesSolved: 0, streakDays: 0 }
+    settings: { darkMode: false, emailNotifications: true },
+    stats: { puzzlesCreated: 0, puzzlesPlayed: 0, puzzlesCompleted: 0 },
+    pinned: []
   };
 
   // Most recently played (from `plays` collection). Null => show the “no recent puzzle” card.
@@ -109,38 +105,31 @@ async function loadFromFirebase() {
 
     // Prime with Auth fields
     profile.email = user.email ?? '';
-    profile.name = user.displayName ?? '';
+    profile.displayName = user.displayName ?? '';
     profile.photoURL = user.photoURL ?? '';
 
-    // --- profiles/{uid}
+    // --- users/{uid}
     try {
-      const docRef = ffs.doc(db, 'profiles', currentUID);
+      const docRef = ffs.doc(db, 'users', currentUID);
       const snap = await ffs.getDoc(docRef);
       if (snap.exists()) {
         const d = snap.data() || {};
         profile = {
           uid: currentUID,
-          name: (d.name ?? profile.name) || '',
+          displayName: (d.displayName ?? profile.displayName) || '',
           email: (d.email ?? profile.email) || '',
-          photoURL: d.photoURL ?? profile.photoURL ?? '',
-          bio: d.bio ?? '',
-          theme: (d.theme ?? 'system'),
-          publicProfile: !!d.publicProfile,
-          notifications: {
-            product: d.notifications?.product ?? true,
-            community: d.notifications?.community ?? true,
-            marketing: d.notifications?.marketing ?? false
-          },
-          socials: {
-            twitter: d.socials?.twitter ?? '',
-            github:  d.socials?.github  ?? '',
-            website: d.socials?.website ?? ''
+          photoURL: d.photoURL || profile.photoURL || '',
+          bio: d.bio || '',
+          settings: {
+            darkMode: d.settings?.darkMode ?? false,
+            emailNotifications: d.settings?.emailNotifications ?? true
           },
           stats: {
             puzzlesCreated: d.stats?.puzzlesCreated ?? 0,
-            puzzlesSolved:  d.stats?.puzzlesSolved  ?? 0,
-            streakDays:     d.stats?.streakDays     ?? 0
-          }
+            puzzlesPlayed: d.stats?.puzzlesPlayed ?? 0,
+            puzzlesCompleted: d.stats?.puzzlesCompleted ?? 0
+          },
+          pinned: d.pinned ?? []
         };
       } else {
         profile.uid = currentUID;
@@ -350,7 +339,7 @@ async function togglePublishPuzzle(p: MyPuzzle) {
       payload.author = {
         uid: currentUID,
         email: profile.email ?? '',
-        name: profile.name ?? '',
+        name: profile.displayName ?? '',
         photoURL: profile.photoURL ?? ''
       };
     } else {
@@ -359,6 +348,52 @@ async function togglePublishPuzzle(p: MyPuzzle) {
     }
 
     await ffs.setDoc(ref, payload, { merge: true });
+
+    // If publishing (not unpublishing), create activity record
+    if (next) {
+      try {
+        // Get the puzzle data to determine visibility
+        const puzzleSnap = await ffs.getDoc(ref);
+        const puzzleData = puzzleSnap.data();
+        const visibility = puzzleData?.visibility || 'public';
+
+        // Create activity document
+        const activityRef = ffs.doc(ffs.collection(db, 'activity'));
+        await ffs.setDoc(activityRef, {
+          type: 'puzzle_published',
+          actor: {
+            uid: currentUID,
+            displayName: profile.displayName ?? 'Anonymous',
+            photoURL: profile.photoURL ?? ''
+          },
+          puzzleId: p.id,
+          puzzleTitle: p.title, // Include puzzle title directly
+          visibility: visibility,
+          createdAt: ffs.serverTimestamp()
+        });
+      } catch (activityError) {
+        console.error('Failed to create activity record:', activityError);
+        // Don't fail the whole publish operation if activity creation fails
+      }
+    } else {
+      // If unpublishing, remove any published activity records for this puzzle
+      try {
+        const activityQuery = ffs.query(
+          ffs.collection(db, 'activity'),
+          ffs.where('type', '==', 'puzzle_published'),
+          ffs.where('puzzleId', '==', p.id),
+          ffs.where('actor.uid', '==', currentUID)
+        );
+        const activitySnap = await ffs.getDocs(activityQuery);
+        
+        // Delete all matching activity documents
+        const deletePromises = activitySnap.docs.map((doc: any) => ffs.deleteDoc(doc.ref));
+        await Promise.all(deletePromises);
+      } catch (activityError) {
+        console.error('Failed to remove activity records:', activityError);
+        // Don't fail the whole unpublish operation if activity deletion fails
+      }
+    }
 
     // Optimistic UI update
     myPuzzles = myPuzzles.map(x =>
@@ -376,12 +411,43 @@ async function togglePublishPuzzle(p: MyPuzzle) {
 }
 
 
+    // Apply theme immediately to the UI
+    function applyTheme(isDark: boolean) {
+      if (typeof document === 'undefined') return;
+      document.documentElement.classList.toggle('dark', isDark);
+    }
+
+    // Save theme to Firebase and apply immediately
+    async function setTheme(isDark: boolean) {
+      if (!db || !ffs || !currentUID) return;
+      
+      // Update local state
+      profile.settings.darkMode = isDark;
+      
+      // Apply theme immediately
+      applyTheme(isDark);
+      
+      // Save to Firebase
+      try {
+        const docRef = ffs.doc(db, 'users', currentUID);
+        await ffs.setDoc(docRef, {
+          settings: {
+            ...profile.settings,
+            darkMode: isDark
+          },
+          updatedAt: ffs.serverTimestamp()
+        }, { merge: true });
+      } catch (error) {
+        console.error('Failed to save theme to Firebase:', error);
+      }
+    }
+
     // Save profile changes to Firestore
     async function saveProfile() {
       if (!db || !ffs || !currentUID) return;
       try {
         saving = true;
-        const docRef = ffs.doc(db, 'profiles', currentUID);
+        const docRef = ffs.doc(db, 'users', currentUID);
         await ffs.setDoc(docRef, { ...profile, updatedAt: ffs.serverTimestamp() }, { merge: true });
         flash = { type: 'success', text: 'Profile saved!' };
       } catch (e) {
@@ -417,7 +483,7 @@ async function togglePublishPuzzle(p: MyPuzzle) {
         currentUID = u.uid;
         // prime with auth
         profile.email = u.email ?? '';
-        profile.name = u.displayName ?? '';
+        profile.displayName = u.displayName ?? '';
         profile.photoURL = u.photoURL ?? '';
         await loadFromFirebase();
       });
@@ -447,12 +513,12 @@ async function togglePublishPuzzle(p: MyPuzzle) {
              class="h-24 w-24 rounded-full object-cover ring-4 ring-white dark:ring-zinc-900" />
       {:else}
         <div class="flex h-24 w-24 items-center justify-center rounded-full bg-white text-3xl font-semibold text-[color:var(--brand)] ring-4 ring-white dark:ring-zinc-900">
-          {initials(profile.name).toUpperCase()}
+          {initials(profile.displayName).toUpperCase()}
         </div>
       {/if}
     </div>
     <div class="grow pb-2">
-      <h1 class="text-2xl font-bold text-white drop-shadow-sm">{profile.name || 'Your Profile'}</h1>
+      <h1 class="text-2xl font-bold text-white drop-shadow-sm">{profile.displayName || 'Your Profile'}</h1>
       <p class="text-white/90">{profile.email || '—'}</p>
     </div>
   </div>
@@ -497,12 +563,12 @@ async function togglePublishPuzzle(p: MyPuzzle) {
           <div class="text-xs text-zinc-600 dark:text-zinc-400">Created</div>
         </div>
         <div class="rounded-xl border border-[color:var(--brand)]/20 p-3">
-          <div class="text-xl font-bold text-[color:var(--brand)]">{profile.stats.puzzlesSolved}</div>
-          <div class="text-xs text-zinc-600 dark:text-zinc-400">Solved</div>
+          <div class="text-xl font-bold text-[color:var(--brand)]">{profile.stats.puzzlesCompleted}</div>
+          <div class="text-xs text-zinc-600 dark:text-zinc-400">Completed</div>
         </div>
         <div class="rounded-xl border border-[color:var(--brand)]/20 p-3">
-          <div class="text-xl font-bold text-[color:var(--brand)]">{profile.stats.streakDays}</div>
-          <div class="text-xs text-zinc-600 dark:text-zinc-400">Streak</div>
+          <div class="text-xl font-bold text-[color:var(--brand)]">{profile.stats.puzzlesPlayed}</div>
+          <div class="text-xs text-zinc-600 dark:text-zinc-400">Played</div>
         </div>
       </div>
     </div>
@@ -716,7 +782,7 @@ async function togglePublishPuzzle(p: MyPuzzle) {
         <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
           <div class="md:col-span-2">
             <label class="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">Display Name</label>
-            <input bind:value={profile.name}
+            <input bind:value={profile.displayName}
               class="w-full rounded-full border border-zinc-300 bg-white px-4 py-2 text-zinc-900 focus:outline-none focus:ring-2 focus:ring-[color:var(--brand)] dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100" />
           </div>
 
@@ -745,54 +811,24 @@ async function togglePublishPuzzle(p: MyPuzzle) {
               {#each (['light','dark','system'] as const) as t}
                 <button type="button"
                   class="rounded-full border px-4 py-2 text-sm capitalize transition
-                         {profile.theme === t
+                         {profile.settings.darkMode === (t === 'dark')
                            ? 'border-[color:var(--brand)] text-[color:var(--brand)] bg-[color:var(--brand)]/10'
                            : 'border-zinc-300 text-zinc-700 dark:border-zinc-700 dark:text-zinc-200'}"
-                  on:click={() => profile.theme = t}>
+                  on:click={() => setTheme(t === 'dark')}>
                   {t}
                 </button>
               {/each}
             </div>
           </div>
 
-          <!-- Visibility -->
+          <!-- Email Notifications -->
           <div>
-            <label class="mb-2 block text-sm font-medium text-zinc-700 dark:text-zinc-300">Visibility</label>
+            <label class="mb-2 block text-sm font-medium text-zinc-700 dark:text-zinc-300">Email Notifications</label>
             <label class="inline-flex cursor-pointer items-center gap-3">
-              <input type="checkbox" bind:checked={profile.publicProfile} class="peer sr-only" />
+              <input type="checkbox" bind:checked={profile.settings.emailNotifications} class="peer sr-only" />
               <span class="h-6 w-11 rounded-full bg-zinc-300 transition peer-checked:bg-[color:var(--brand)]/70 dark:bg-zinc-700"></span>
-              <span class="text-sm text-zinc-700 dark:text-zinc-200">{profile.publicProfile ? 'Public' : 'Private'}</span>
+              <span class="text-sm text-zinc-700 dark:text-zinc-200">{profile.settings.emailNotifications ? 'Enabled' : 'Disabled'}</span>
             </label>
-          </div>
-
-          <!-- Socials -->
-          <div>
-            <label class="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">Twitter</label>
-            <input bind:value={profile.socials.twitter} placeholder="@handle"
-              class="w-full rounded-full border border-zinc-300 bg-white px-4 py-2 text-zinc-900 focus:outline-none focus:ring-2 focus:ring-[color:var(--brand)] dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100" />
-          </div>
-          <div>
-            <label class="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">GitHub</label>
-            <input bind:value={profile.socials.github} placeholder="username"
-              class="w-full rounded-full border border-zinc-300 bg-white px-4 py-2 text-zinc-900 focus:outline-none focus:ring-2 focus:ring-[color:var(--brand)] dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100" />
-          </div>
-          <div class="md:col-span-2">
-            <label class="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">Website</label>
-            <input bind:value={profile.socials.website} placeholder="https://example.com"
-              class="w-full rounded-full border border-zinc-300 bg-white px-4 py-2 text-zinc-900 focus:outline-none focus:ring-2 focus:ring-[color:var(--brand)] dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100" />
-          </div>
-
-          <!-- Notifications -->
-          <div class="md:col-span-2">
-            <label class="mb-2 block text-sm font-medium text-zinc-700 dark:text-zinc-300">Notifications</label>
-            <div class="grid grid-cols-1 gap-2 md:grid-cols-3">
-              {#each Object.entries(profile.notifications) as [k, v]}
-                <label class="flex items-center justify-between gap-3 rounded-xl border border-zinc-200 bg-white px-4 py-2 dark:border-zinc-800 dark:bg-zinc-900">
-                  <span class="text-sm capitalize text-zinc-700 dark:text-zinc-200">{k}</span>
-                  <input type="checkbox" bind:checked={(profile.notifications as any)[k]} class="h-4 w-4 accent-[color:var(--brand)]" />
-                </label>
-              {/each}
-            </div>
           </div>
         </div>
 

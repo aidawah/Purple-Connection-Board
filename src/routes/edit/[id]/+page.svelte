@@ -4,7 +4,7 @@
   import { onMount } from "svelte";
 
   let id = "";
-  const unsub = page.subscribe(p => id = p.params.id);
+  const unsub = page.subscribe(p => id = p.params.id || "");
 
   let initial = { title: "", size: "4x4", categories: [] as Array<{title:string; words:string[]}> };
   let loading = true;
@@ -71,7 +71,9 @@
       busy = true;
       const fb = await import("$lib/firebase");
       const { db } = fb as any;
-      const { doc, setDoc, serverTimestamp, deleteField } = await import("firebase/firestore");
+      const { doc, setDoc, serverTimestamp, deleteField, getDoc, collection } = await import("firebase/firestore");
+      const { getAuth } = await import("firebase/auth");
+      
       const ref = doc(db, "puzzles", id);
 
       await setDoc(ref, {
@@ -80,6 +82,67 @@
         updatedAt: serverTimestamp(),
         publishedAt: next ? serverTimestamp() : deleteField()
       }, { merge: true });
+
+      // If publishing (not unpublishing), create activity record
+      if (next) {
+        try {
+          // Get current user from auth
+          const auth = getAuth();
+          const user = auth.currentUser;
+          
+          if (user) {
+            // Get the puzzle data to determine visibility and title
+            const puzzleSnap = await getDoc(ref);
+            const puzzleData = puzzleSnap.data();
+            const visibility = puzzleData?.visibility || 'public';
+            const puzzleTitle = puzzleData?.title || 'Untitled';
+
+            // Create activity document
+            const activityRef = doc(collection(db, 'activity'));
+            await setDoc(activityRef, {
+              type: 'puzzle_published',
+              actor: {
+                uid: user.uid,
+                displayName: user.displayName ?? 'Anonymous',
+                photoURL: user.photoURL ?? ''
+              },
+              puzzleId: id,
+              puzzleTitle: puzzleTitle, // Include puzzle title directly
+              visibility: visibility,
+              createdAt: serverTimestamp()
+            });
+          }
+        } catch (activityError) {
+          console.error('Failed to create activity record:', activityError);
+          // Don't fail the whole publish operation if activity creation fails
+        }
+      } else {
+        // If unpublishing, remove any published activity records for this puzzle
+        try {
+          // Get current user from auth
+          const auth = getAuth();
+          const user = auth.currentUser;
+          
+          if (user) {
+            const { query, where, getDocs, deleteDoc } = await import("firebase/firestore");
+            
+            const activityQuery = query(
+              collection(db, 'activity'),
+              where('type', '==', 'puzzle_published'),
+              where('puzzleId', '==', id),
+              where('actor.uid', '==', user.uid)
+            );
+            const activitySnap = await getDocs(activityQuery);
+            
+            // Delete all matching activity documents
+            const deletePromises = activitySnap.docs.map((doc: any) => deleteDoc(doc.ref));
+            await Promise.all(deletePromises);
+          }
+        } catch (activityError) {
+          console.error('Failed to remove activity records:', activityError);
+          // Don't fail the whole unpublish operation if activity deletion fails
+        }
+      }
 
       flash = { type:"success", text: next ? "Published." : "Unpublished." };
     } catch (e) {
@@ -122,7 +185,7 @@
       draftKey={null}  
       busy={busy}
       brand="#14b8a6"
-      enable-generate
+      enableGenerate
     />
   {/if}
 </main>

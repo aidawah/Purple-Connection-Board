@@ -22,29 +22,72 @@
 
   let showUserMenu = false;
 
-  let userData = { name: '', email: '', bio: '', theme: 'light', photoURL: '' };
+  let userData = { name: '', email: '', bio: '', photoURL: '' };
+  let userSettings = { darkMode: false, emailNotifications: true };
+  
+  // Firebase
+  let db: any = null;
+  let ffs: any = null;
+  let currentUID: string | null = null;
 
-  onMount(() => {
+  // Initialize Firebase
+  async function initFirebase() {
+    if (!browser) return;
+    try {
+      const fb = await import('$lib/firebase');
+      const firestore = await import('firebase/firestore');
+      db = fb.db;
+      ffs = firestore;
+    } catch (error) {
+      console.error('Failed to initialize Firebase:', error);
+    }
+  }
+
+  // Load user settings from Firebase
+  async function loadUserSettings(uid: string) {
+    if (!db || !ffs) return;
+    try {
+      const docRef = ffs.doc(db, 'users', uid);
+      const snap = await ffs.getDoc(docRef);
+      if (snap.exists()) {
+        const data = snap.data();
+        userSettings = {
+          darkMode: data.settings?.darkMode ?? false,
+          emailNotifications: data.settings?.emailNotifications ?? true
+        };
+        // Update theme based on Firebase settings
+        themeMode = userSettings.darkMode ? 'dark' : 'light';
+        applyTheme(themeMode);
+      }
+    } catch (error) {
+      console.error('Failed to load user settings:', error);
+    }
+  }
+
+  onMount(async () => {
     if (!browser) return;
 
+    await initFirebase();
+
     // Get user data from Firebase auth
-    const unsubscribe = auth.onAuthStateChanged(user => {
+    const unsubscribe = auth.onAuthStateChanged(async user => {
       if (user) {
+        currentUID = user.uid;
         userData = {
           name: user.displayName || '',
           email: user.email || '',
           bio: '',
-          theme: userData.theme,
           photoURL: user.photoURL || ''
         };
+        await loadUserSettings(user.uid);
       } else {
-        userData = { name: '', email: '', bio: '', theme: 'light', photoURL: '' };
+        currentUID = null;
+        userData = { name: '', email: '', bio: '', photoURL: '' };
+        userSettings = { darkMode: false, emailNotifications: true };
+        themeMode = 'light';
+        applyTheme('light');
       }
     });
-
-    // Load theme from local storage (separate from user profile)
-    const savedTheme = localStorage.getItem('themePreference') || 'light';
-    document.documentElement.classList.toggle('dark', savedTheme === 'dark');
 
     return () => unsubscribe();
   });
@@ -85,34 +128,38 @@
     root.classList.toggle('dark', isDark);
   }
 
-  function setThemeMode(mode: 'light' | 'dark' | 'system') {
-    themeMode = mode;
-    // persist both places to keep your app consistent
+  // Save theme to Firebase
+  async function saveThemeToFirebase(isDark: boolean) {
+    if (!currentUID || !db || !ffs) return;
     try {
-      localStorage.setItem('themeMode', mode);
-      userData = { ...userData, theme: mode === 'dark' ? 'dark' : 'light' };
-      localStorage.setItem('userProfile', JSON.stringify(userData));
-    } catch {}
-    applyTheme(mode);
+      const docRef = ffs.doc(db, 'users', currentUID);
+      await ffs.setDoc(docRef, {
+        settings: {
+          ...userSettings,
+          darkMode: isDark
+        },
+        updatedAt: ffs.serverTimestamp()
+      }, { merge: true });
+      userSettings.darkMode = isDark;
+    } catch (error) {
+      console.error('Failed to save theme to Firebase:', error);
+    }
   }
 
-  onMount(() => {
-    if (!browser) return;
-
-    // load saved mode (prefer themeMode, fall back to userProfile.theme)
-    const savedMode =
-      (localStorage.getItem('themeMode') as 'light' | 'dark' | 'system' | null) ||
-      (userData.theme === 'dark' ? 'dark' : 'light');
-    themeMode = savedMode || 'light';
-    applyTheme(themeMode);
-
-    // listen to system theme changes if user chooses "system"
-    if (window.matchMedia) {
-      systemMql = window.matchMedia('(prefers-color-scheme: dark)');
-      const handle = () => themeMode === 'system' && applyTheme('system');
-      systemMql.addEventListener?.('change', handle);
+  function setThemeMode(mode: 'light' | 'dark' | 'system') {
+    themeMode = mode;
+    
+    // Determine if dark mode should be active
+    const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+    const isDark = mode === 'dark' || (mode === 'system' && prefersDark);
+    
+    // Save to Firebase (only dark/light, not system)
+    if (mode !== 'system') {
+      saveThemeToFirebase(isDark);
     }
-  });
+    
+    applyTheme(mode);
+  }
 </script>
 
 <!-- Desktop navbar -->

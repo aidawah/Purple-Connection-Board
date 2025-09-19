@@ -1,7 +1,7 @@
 <!-- src/routes/signin/+page.svelte -->
 <script lang="ts">
   import { goto } from '$app/navigation';
-  import { signInWithGoogle, signInWithApple } from '$lib/firebase';
+  import { signInWithGoogle, signInWithApple, upsertUser } from '$lib/firebase';
   import { browser } from '$app/environment';
 
   let errorMsg = '';
@@ -43,8 +43,27 @@
     errorMsg = '';
     loadingProvider = provider;
     try {
-      if (provider === 'google') await signInWithGoogle();
-      else await signInWithApple();
+      console.log('Starting authentication with', provider);
+      const result = provider === 'google' ? await signInWithGoogle() : await signInWithApple();
+      console.log('Authentication result:', result);
+      
+      // Create/update user document in Firebase
+      if (result?.user) {
+        console.log('Creating user document for:', result.user.uid, result.user.email);
+        try {
+          await upsertUser(result.user);
+          console.log('User document created successfully');
+        } catch (upsertError: any) {
+          console.error('Failed to create user document:', upsertError);
+          errorMsg = `User document creation failed: ${upsertError?.message || 'Unknown error'}`;
+          return;
+        }
+      } else {
+        console.error('No user in authentication result');
+        errorMsg = 'Authentication succeeded but no user data received.';
+        return;
+      }
+      
       redirectAfterAuth();
     } catch (err: any) {
       console.error('Auth error:', err);
