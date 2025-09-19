@@ -1,32 +1,27 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    %sveltekit.head%
-<!--link for apple/google logos-->
-     <link
-    href="https://unpkg.com/boxicons@2.1.4/css/boxicons.min.css"
-    rel="stylesheet"
-     />
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		%sveltekit.head%
+		<!--link for apple/google logos-->
+		<link href="https://unpkg.com/boxicons@2.1.4/css/boxicons.min.css" rel="stylesheet" />
 
-    <!-- Default to DARK; persist choice -->
-    <script>
-      (function () {
-        try {
-          const stored = localStorage.getItem('theme');   // 'light' | 'dark' | null
-          const dark = stored ? stored === 'dark' : true; // default: dark
-          document.documentElement.classList.toggle('dark', dark);
-          if (stored == null) localStorage.setItem('theme', dark ? 'dark' : 'light');
-        } catch {}
-      })();
-    </script>
-  </head>
+		<!-- Default to DARK; persist choice -->
+		<script>
+			(function () {
+				try {
+					const stored = localStorage.getItem('theme'); // 'light' | 'dark' | null
+					const dark = stored ? stored === 'dark' : true; // default: dark
+					document.documentElement.classList.toggle('dark', dark);
+					if (stored == null) localStorage.setItem('theme', dark ? 'dark' : 'light');
+				} catch {}
+			})();
+		</script>
+	</head>
 
-  <!-- ⬇️ put the theme classes here -->
-  <body
-    data-sveltekit-preload-data="hover"
-  >
-    <div style="display: contents">%sveltekit.body%</div>
-  </body>
+	<!-- ⬇️ put the theme classes here -->
+	<body data-sveltekit-preload-data="hover">
+		<div style="display: contents">%sveltekit.body%</div>
+	</body>
 </html>
