@@ -15,10 +15,12 @@
     | { order?: number[]; solvedByOrig?: boolean[]; selectedOrig?: number[]; selectedSi?: number[]; selectedWords?: string[] }
     | null = null;
 
-  export let showControls: boolean = true;
-  export let brandSrc: string = "/HS-LOGO.png";
-  export let showBrand: boolean | undefined = undefined;
-  $: showBrandEffective = (showBrand ?? showControls) && !!brandSrc;
+export let showControls: boolean = true;
+// brand disabled by default; only renders if parent sets showBrand={true} and provides a src
+export let brandSrc: string | null = null;
+export let showBrand: boolean = false;
+$: showBrandEffective = Boolean(showBrand && brandSrc);
+
 
   export let celebrateOnComplete: boolean = true;
   export let DEBUG = false;
