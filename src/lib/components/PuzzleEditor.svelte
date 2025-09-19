@@ -217,19 +217,29 @@
 
       <!-- grid -->
       <div class="rounded-2xl border border-zinc-200 bg-white/90 p-4 space-y-4 shadow-sm dark:bg-zinc-900/80 dark:border-zinc-800">
-        {#each categories as cat, ci}
-          <div class="grid grid-cols-1 sm:grid-cols-5 gap-3 items-start">
-            <div class="sm:col-span-2">
-              <label class="text-sm font-medium text-zinc-700 dark:text-zinc-200" for={`cat-${ci}`}>Category {ci + 1}</label>
-              <input id={`cat-${ci}`} class="h-11 w-full rounded-lg border border-zinc-300 bg-white px-3 text-zinc-900 outline-none focus:ring-2 focus:ring-[color:var(--brand)] dark:bg-zinc-900 dark:text-zinc-100 dark:border-zinc-700 mt-2" bind:value={cat.name} placeholder="Name" />
-            </div>
-            <div class="sm:col-span-3 grid grid-cols-2 sm:grid-cols-4 gap-2">
-              {#each cat.words as _, wi}
-                <input class="h-10 w-full rounded-lg border border-zinc-300 bg-white px-3 text-zinc-900 outline-none focus:ring-2 focus:ring-[color:var(--brand)] dark:bg-zinc-900 dark:text-zinc-100 dark:border-zinc-700" bind:value={categories[ci].words[wi]} placeholder={`Word ${wi + 1}`} />
-              {/each}
-            </div>
-          </div>
-        {/each}
+{#each categories as cat, ci}
+  <div class="grid grid-cols-1 sm:grid-cols-5 gap-3 items-center">
+    <div class="sm:col-span-2">
+      <input
+        id={`cat-${ci}`}
+        class="h-10 w-full rounded-lg border border-zinc-300 bg-white px-3 text-zinc-900 outline-none focus:ring-2 focus:ring-[color:var(--brand)] dark:bg-zinc-900 dark:text-zinc-100 dark:border-zinc-700"
+        bind:value={cat.name}
+        placeholder="Category {ci + 1}"
+      />
+    </div>
+
+    <div class="sm:col-span-3 grid grid-cols-2 sm:grid-cols-4 gap-2 self-center">
+      {#each cat.words as _, wi}
+        <input
+          class="h-10 w-full rounded-lg border border-zinc-300 bg-white px-3 text-zinc-900 outline-none focus:ring-2 focus:ring-[color:var(--brand)] dark:bg-zinc-900 dark:text-zinc-100 dark:border-zinc-700"
+          bind:value={categories[ci].words[wi]}
+          placeholder={`Word ${wi + 1}`}
+        />
+      {/each}
+    </div>
+  </div>
+{/each}
+
       </div>
 
       {#if statusMsg}
