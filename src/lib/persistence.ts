@@ -1,8 +1,15 @@
 // src/lib/persistence.ts
-import { browser } from '$app/environment';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
-import { db, auth } from '$lib/firebase'; // make sure firebase.ts exports { db, auth }
-import type { User } from 'firebase/auth';
+import { browser } from "$app/environment";
+import { doc, getDoc, setDoc } from "firebase/firestore";
+import { db, auth } from "$lib/firebase"; // make sure firebase.ts exports { db, auth }
+import type { User } from "firebase/auth";
+
+/* =========================
+ * Demo / blocklist guard
+ * =======================*/
+// Add ids here that should never persist (local or cloud)
+const PERSIST_BLOCKLIST = new Set(["example"]);
+const isBlocked = (puzzleId: string) => PERSIST_BLOCKLIST.has(String(puzzleId));
 
 /* =========================
  * Types
@@ -24,19 +31,19 @@ export type RunSnapshot = {
  * LocalStorage helpers
  * =======================*/
 function localSaveRun(puzzleId: string, snapshot: RunSnapshot) {
-	if (!browser) return;
-	try {
-		localStorage.setItem(`connections:${puzzleId}`, JSON.stringify(snapshot));
-	} catch {}
+  if (!browser || isBlocked(puzzleId)) return;
+  try {
+    localStorage.setItem(`connections:${puzzleId}`, JSON.stringify(snapshot));
+  } catch {}
 }
 function localLoadRun(puzzleId: string): RunSnapshot | null {
-	if (!browser) return null;
-	try {
-		const raw = localStorage.getItem(`connections:${puzzleId}`);
-		return raw ? (JSON.parse(raw) as RunSnapshot) : null;
-	} catch {
-		return null;
-	}
+  if (!browser || isBlocked(puzzleId)) return null;
+  try {
+    const raw = localStorage.getItem(`connections:${puzzleId}`);
+    return raw ? (JSON.parse(raw) as RunSnapshot) : null;
+  } catch {
+    return null;
+  }
 }
 
 /* =========================
@@ -80,8 +87,11 @@ function runDoc(uid: string, puzzleId: string) {
  * Runs
  * =======================*/
 export async function saveRun(puzzleId: string, snapshot: RunSnapshot) {
-	// Always mirror to local first for instant resume
-	localSaveRun(puzzleId, snapshot);
+  // Blocked ids: no local or cloud persistence
+  if (isBlocked(puzzleId)) return;
+
+  // Always mirror to local first for instant resume
+  localSaveRun(puzzleId, snapshot);
 
 	if (!browser) return; // SSR: local only
 	const user = await ensureUser();
@@ -118,7 +128,10 @@ export async function saveRun(puzzleId: string, snapshot: RunSnapshot) {
 }
 
 export async function loadRun(puzzleId: string): Promise<RunSnapshot | null> {
-	if (!browser) return localLoadRun(puzzleId);
+  // Blocked ids: never load (pretend no state)
+  if (isBlocked(puzzleId)) return null;
+
+  if (!browser) return localLoadRun(puzzleId);
 
 	const user = await ensureUser();
 	if (user) {
@@ -152,7 +165,10 @@ export async function loadRun(puzzleId: string): Promise<RunSnapshot | null> {
 }
 
 export async function clearRun(puzzleId: string) {
-	localSaveRun(puzzleId, { ts: Date.now(), run: { completed: false } });
+  // Blocked ids: do nothing
+  if (isBlocked(puzzleId)) return;
+
+  localSaveRun(puzzleId, { ts: Date.now(), run: { completed: false } });
 
 	if (!browser) return;
 	const user = await ensureUser();

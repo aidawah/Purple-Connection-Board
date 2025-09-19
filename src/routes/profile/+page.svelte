@@ -1,7 +1,8 @@
 <script lang="ts">
-	import { onMount, onDestroy } from 'svelte';
-	import { browser } from '$app/environment';
-	import { goto } from '$app/navigation';
+  import { onMount, onDestroy } from 'svelte';
+  import { browser } from '$app/environment';
+  import { goto } from '$app/navigation';
+  import Share from "$lib/components/Share.svelte";
 
 	// ---- theme + data toggles ----
 	const BRAND = '#14b8a6';
@@ -126,19 +127,22 @@
 							darkMode: d.settings?.darkMode ?? false,
 							emailNotifications: d.settings?.emailNotifications ?? true
 						},
-						stats: {
-							puzzlesCreated: d.stats?.puzzlesCreated ?? 0,
-							puzzlesPlayed: d.stats?.puzzlesPlayed ?? 0,
-							puzzlesCompleted: d.stats?.puzzlesCompleted ?? 0
-						},
-						pinned: d.pinned ?? []
-					};
-				} else {
-					profile.uid = currentUID;
-				}
-			} catch {
-				// keep seeded profile
-			}
+				stats: {
+					puzzlesCreated: d.stats?.puzzlesCreated ?? 0,
+					puzzlesPlayed: d.stats?.puzzlesPlayed ?? 0,
+					puzzlesCompleted: d.stats?.puzzlesCompleted ?? 0
+				},
+				pinned: d.pinned ?? []
+			};
+
+			// Apply dark mode from user settings immediately
+			applyTheme(profile.settings.darkMode);
+		} else {
+			profile.uid = currentUID;
+		}
+	} catch {
+		// keep seeded profile
+	}
 
 			// --- activity (recent first)
 			try {
@@ -347,8 +351,8 @@
 		try {
 			publishBusy = p.id;
 
-			const next = !p.isPublished; // true → publish, false → unpublish
-			const ref = ffs.doc(db, 'puzzles', p.id);
+    const next = !p.isPublished; // true = publish, false = unpublish
+    const ref = ffs.doc(db, 'puzzles', p.id);
 
 			const payload: any = {
 				isPublished: next,
@@ -356,19 +360,17 @@
 				updatedAt: ffs.serverTimestamp()
 			};
 
-			if (next) {
-				// going published: set publishedAt and (re)ensure author is present
-				payload.publishedAt = ffs.serverTimestamp();
-				payload.author = {
-					uid: currentUID,
-					email: profile.email ?? '',
-					name: profile.displayName ?? '',
-					photoURL: profile.photoURL ?? ''
-				};
-			} else {
-				// going unpublished: remove publishedAt (or keep it if you prefer)
-				payload.publishedAt = ffs.deleteField ? ffs.deleteField() : null;
-			}
+    if (next) {
+      // publishing: must set server time so rules pass
+      payload.publishedAt = ffs.serverTimestamp();
+      payload.author = {
+        uid: currentUID,
+        email: profile.email ?? '',
+        name: profile.displayName ?? '',
+        photoURL: profile.photoURL ?? ''
+      };
+    }
+    // UNPUBLISHING: do NOT touch publishedAt (rules require it stays unchanged)
 
 			await ffs.setDoc(ref, payload, { merge: true });
 
@@ -418,10 +420,10 @@
 				}
 			}
 
-			// Optimistic UI update
-			myPuzzles = myPuzzles.map((x) =>
-				x.id === p.id ? { ...x, isPublished: next, status: payload.status } : x
-			);
+    // Optimistic UI
+    myPuzzles = myPuzzles.map((x) =>
+      x.id === p.id ? { ...x, isPublished: next, status: payload.status } : x
+    );
 
 			flash = { type: 'success', text: next ? 'Puzzle published.' : 'Puzzle unpublished.' };
 		} catch (e) {
@@ -783,36 +785,24 @@
 					</a>
 				</div>
 
-				{#if myPuzzles.length > 0}
-					<div class="grid grid-cols-1 gap-6 p-6 sm:grid-cols-2">
-						{#each myPuzzles as p}
-							<div
-								class="overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-sm transition hover:shadow-md dark:border-zinc-800 dark:bg-zinc-900"
-							>
-								<div
-									class="relative flex aspect-video items-center justify-center bg-gradient-to-br from-[color:var(--brand)]/10 to-emerald-200/20 dark:from-[color:var(--brand)]/20 dark:to-emerald-900/10"
-								>
-									{#if p.imageUrl}
-										<img
-											src={p.imageUrl}
-											alt={p.title}
-											class="h-full w-full object-cover"
-											loading="lazy"
-										/>
-									{/if}
-									{#if p.isPinned}
-										<svg
-											viewBox="0 0 24 24"
-											fill="currentColor"
-											class="absolute top-2 right-2 h-5 w-5 rotate-[-20deg] text-[color:var(--brand)] drop-shadow"
-											aria-label="Pinned"
-										>
-											<circle cx="12" cy="7" r="3" />
-											<rect x="11" y="9.5" width="2" height="7.5" rx="1" />
-											<path d="M12 17l-2 5h4l-2-5z" />
-										</svg>
-									{/if}
-								</div>
+    {#if myPuzzles.length > 0}
+      <div class="grid grid-cols-1 gap-6 p-6 sm:grid-cols-2">
+        {#each myPuzzles as p}
+          <div class="rounded-xl border border-zinc-200 bg-white shadow-sm transition hover:shadow-md dark:border-zinc-800 dark:bg-zinc-900">
+            <div class="relative flex aspect-video items-center justify-center overflow-hidden rounded-t-xl bg-gradient-to-br from-[color:var(--brand)]/10 to-emerald-200/20 dark:from-[color:var(--brand)]/20 dark:to-emerald-900/10">
+              {#if p.imageUrl}
+                <img src={p.imageUrl} alt={p.title} class="h-full w-full object-cover" loading="lazy" />
+              {/if}
+              {#if p.isPinned}
+                <svg viewBox="0 0 24 24" fill="currentColor"
+                     class="absolute right-2 top-2 h-5 w-5 rotate-[-20deg] text-[color:var(--brand)] drop-shadow"
+                     aria-label="Pinned">
+                  <circle cx="12" cy="7" r="3" />
+                  <rect x="11" y="9.5" width="2" height="7.5" rx="1" />
+                  <path d="M12 17l-2 5h4l-2-5z" />
+                </svg>
+              {/if}
+            </div>
 
 								<div class="p-6">
 									<div class="mb-3 flex items-start justify-between gap-3">
@@ -843,55 +833,69 @@
 										<span>{p.solveCount ?? 0} solves</span>
 									</div>
 
-									<div class="flex items-center justify-center gap-3">
-										<a
-											href={'/gameboard/' + encodeURIComponent(p.id)}
-											data-sveltekit-preload-data="hover"
-											data-sveltekit-preload-code="hover"
-											class="rounded-md border border-[color:var(--brand)]/30 px-3 py-2 text-sm font-medium text-[color:var(--brand)] transition hover:bg-[color:var(--brand)]/10 focus:ring-2 focus:ring-[color:var(--brand)]/40 focus:outline-none"
-										>
-											Play
-										</a>
-										<a
-											href={'/edit/' + encodeURIComponent(p.id)}
-											class="rounded-md bg-[color:var(--brand)] px-3 py-2 text-sm font-semibold text-white shadow-sm transition hover:brightness-95 focus:ring-2 focus:ring-[color:var(--brand)]/40 focus:outline-none"
-										>
-											Edit
-										</a>
-										<button
-											type="button"
-											on:click={() => togglePublishPuzzle(p)}
-											disabled={publishBusy === p.id}
-											class="rounded-md border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-700 transition hover:bg-zinc-50 focus:ring-2 focus:ring-[color:var(--brand)]/40 focus:outline-none disabled:cursor-not-allowed disabled:opacity-60 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800"
-										>
-											{publishBusy === p.id ? 'Updating…' : p.isPublished ? 'Unpublish' : 'Publish'}
-										</button>
-									</div>
-								</div>
-							</div>
-						{/each}
-					</div>
-				{:else}
-					<div class="p-10 text-center">
-						<div class="mb-2 text-5xl">🧩</div>
-						<p class="mb-4 text-zinc-700 dark:text-zinc-300">
-							You haven’t created any puzzles yet.
-						</p>
-						<a
-							href="/create"
-							class="rounded-md bg-[color:var(--brand)] px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:brightness-95 focus:ring-2 focus:ring-[color:var(--brand)]/40 focus:outline-none"
-						>
-							Create your first puzzle
-						</a>
-					</div>
-				{/if}
-			</div>
-		{:else if tab === 'activity'}
-			<!-- Activity timeline -->
-			<div
-				class="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-900"
-			>
-				<h3 class="mb-4 text-lg font-semibold text-zinc-900 dark:text-zinc-100">Your Timeline</h3>
+<!-- Button row -->
+
+<div class="mt-4 grid grid-cols-[1fr_1fr_1fr_1.6fr] gap-2 items-stretch [&>*]:min-w-0">
+  <a
+    href={"/gameboard/" + encodeURIComponent(p.id)}
+    class="flex h-10 w-full items-center justify-center rounded-md border border-[color:var(--brand)]/30 text-sm font-medium text-[color:var(--brand)] transition hover:bg-[color:var(--brand)]/10"
+  >Play</a>
+
+  <a
+    href={"/edit/" + encodeURIComponent(p.id)}
+    class="flex h-10 w-full items-center justify-center rounded-md bg-[color:var(--brand)] text-sm font-semibold text-white shadow-sm transition hover:brightness-95"
+  >Edit</a>
+
+  <Share
+    puzzleId={p.id}
+    puzzleTitle={p.title}
+    fullWidth
+  />
+
+<button
+  type="button"
+  on:click={() => togglePublishPuzzle(p)}
+  disabled={publishBusy === p.id}
+  class="flex h-10 w-full items-center justify-center whitespace-nowrap
+         rounded-md border border-zinc-300 px-3 text-sm font-medium text-zinc-700
+         transition hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-200
+         dark:hover:bg-zinc-800 disabled:opacity-60"
+  title={p.isPublished ? 'Unpublish' : 'Publish'}
+>
+  {publishBusy === p.id ? 'Updating…' : (p.isPublished ? 'Unpublish' : 'Publish')}
+</button>
+
+
+
+</div>
+
+
+
+
+
+
+
+            </div>
+          </div>
+        {/each}
+      </div>
+    {:else}
+      <div class="p-10 text-center">
+        <div class="mb-2 text-5xl">🧩</div>
+        <p class="mb-4 text-zinc-700 dark:text-zinc-300">You haven’t created any puzzles yet.</p>
+        <a href="/create"
+           class="rounded-md bg-[color:var(--brand)] px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:brightness-95 focus:outline-none focus:ring-2 focus:ring-[color:var(--brand)]/40">
+          Create your first puzzle
+        </a>
+      </div>
+    {/if}
+  </div>
+
+
+    {:else if tab === 'activity'}
+      <!-- Activity timeline -->
+      <div class="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+        <h3 class="mb-4 text-lg font-semibold text-zinc-900 dark:text-zinc-100">Your Timeline</h3>
 
 				{#if recentActivity.length > 0}
 					<ol class="relative ml-3 border-l border-zinc-200 pl-6 dark:border-zinc-800">
