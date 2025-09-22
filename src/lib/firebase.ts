@@ -89,12 +89,12 @@ const appleProvider = new OAuthProvider("apple.com");
 // Note: We intentionally create a fresh provider instance here to add scopes
 // without mutating the module-level `googleProvider` (pure function style).
 export async function signInWithGoogle() {
-  const provider = new GoogleAuthProvider();
-  provider.addScope("openid");
-  provider.addScope("profile");
-  provider.addScope("email");
+	const provider = new GoogleAuthProvider();
+	provider.addScope('openid');
+	provider.addScope('profile');
+	provider.addScope('email');
 
-  const result = await signInWithPopup(auth, provider);
+	const result = await signInWithPopup(auth, provider);
 
   // Optional: normalize the user's Google avatar to a square `sz` size so
   // your UI has consistent image dimensions across devices.
@@ -152,22 +152,22 @@ export function normalizeGoogleAvatar(rawUrl: string, size = 128) {
 // Strongly-typed collection refs using your app's converters.
 // This keeps reads/writes type-safe and centralized.
 export const col = {
-  puzzles: () => collection(db, "puzzles").withConverter(Converters.puzzles),
-  users: () => collection(db, "users").withConverter(Converters.users),
-  activity: () => collection(db, "activity").withConverter(Converters.activity),
+	puzzles: () => collection(db, 'puzzles').withConverter(Converters.puzzles),
+	users: () => collection(db, 'users').withConverter(Converters.users),
+	activity: () => collection(db, 'activity').withConverter(Converters.activity)
 };
 
 // Strongly-typed document refs (top-level and subcollections).
 // Keeping all paths here makes future refactors safer.
 export const ref = {
-  puzzle: (id: string) => doc(db, "puzzles", id).withConverter(Converters.puzzles),
-  user: (uid: string) => doc(db, "users", uid).withConverter(Converters.users),
-  userCollection: (uid: string, cid: string) =>
-    doc(db, `users/${uid}/collections/${cid}`).withConverter(Converters.userCollections),
-  reaction: (puzzleId: string, uid: string) =>
-    doc(db, `puzzles/${puzzleId}/reactions/${uid}`).withConverter(Converters.reactions),
-  play: (puzzleId: string, uid: string) =>
-    doc(db, `puzzles/${puzzleId}/plays/${uid}`).withConverter(Converters.plays),
+	puzzle: (id: string) => doc(db, 'puzzles', id).withConverter(Converters.puzzles),
+	user: (uid: string) => doc(db, 'users', uid).withConverter(Converters.users),
+	userCollection: (uid: string, cid: string) =>
+		doc(db, `users/${uid}/collections/${cid}`).withConverter(Converters.userCollections),
+	reaction: (puzzleId: string, uid: string) =>
+		doc(db, `puzzles/${puzzleId}/reactions/${uid}`).withConverter(Converters.reactions),
+	play: (puzzleId: string, uid: string) =>
+		doc(db, `puzzles/${puzzleId}/plays/${uid}`).withConverter(Converters.plays)
 };
 
 /* ------------------------------------------------------------------ */
@@ -177,25 +177,25 @@ export const ref = {
 // Fetch public puzzles for list/grid views. Ordered by newest published first.
 // Returns a plain list of typed puzzle card objects.
 export async function fetchPublicPuzzles(max = 20) {
-  const qRef = query(
-    col.puzzles(),
-    where("visibility", "==", "public"),
-    orderBy("publishedAt", "desc"),
-    limit(max),
-  );
-  const snap = await getDocs(qRef);
-  return snap.docs.map((d) => ({ id: d.id, ...d.data() } as { id: string } & PuzzleDoc));
+	const qRef = query(
+		col.puzzles(),
+		where('visibility', '==', 'public'),
+		orderBy('publishedAt', 'desc'),
+		limit(max)
+	);
+	const snap = await getDocs(qRef);
+	return snap.docs.map((d) => ({ id: d.id, ...d.data() }) as { id: string } & PuzzleDoc);
 }
 
 // Fetch a single puzzle and adapt its words into the GameBoard engine shape.
 // Supports two storage formats: category buckets and a flat words array.
 export async function fetchPuzzle(id: string) {
-  const snap = await getDoc(ref.puzzle(id));
-  if (!snap.exists()) return null;
+	const snap = await getDoc(ref.puzzle(id));
+	if (!snap.exists()) return null;
 
-  const x: any = snap.data();
-  const groups = ["A", "B", "C", "D"] as const;
-  const words: { id: string; text: string; groupId: "A" | "B" | "C" | "D" }[] = [];
+	const x: any = snap.data();
+	const groups = ['A', 'B', 'C', 'D'] as const;
+	const words: { id: string; text: string; groupId: 'A' | 'B' | 'C' | 'D' }[] = [];
 
   // Preferred source: categories[0..3].words[0..3]
   if (Array.isArray(x?.categories) && x.categories.length) {
@@ -214,59 +214,59 @@ export async function fetchPuzzle(id: string) {
     }
   }
 
-  return {
-    id: snap.id,
-    title: x?.title ?? "Untitled",
-    description: x?.description ?? "",
-    words,
-  };
+	return {
+		id: snap.id,
+		title: x?.title ?? 'Untitled',
+		description: x?.description ?? '',
+		words
+	};
 }
 
 // Create or update a user document with initial defaults.
 // Uses merge write + server timestamps to preserve existing data.
 export async function upsertUser(u: User) {
-  const payload: UserDoc = {
-    displayName: u.displayName ?? "Anonymous",
-    bio: "",
-    photoURL: u.photoURL ?? undefined,
-    email: u.email ?? undefined,
-    providerIds: u.providerData.map((p) => p?.providerId ?? "").filter(Boolean),
-    settings: { darkMode: true, emailNotifications: true },
-    stats: { puzzlesCreated: 0, puzzlesPlayed: 0, puzzlesCompleted: 0 },
-    pinned: [],
-  };
-  await setDoc(
-    ref.user(u.uid),
-    { ...payload, createdAt: serverTimestamp(), updatedAt: serverTimestamp() },
-    { merge: true },
-  );
+	const payload: UserDoc = {
+		displayName: u.displayName ?? 'Anonymous',
+		bio: '',
+		photoURL: u.photoURL ?? undefined,
+		email: u.email ?? undefined,
+		providerIds: u.providerData.map((p) => p?.providerId ?? '').filter(Boolean),
+		settings: { darkMode: true, emailNotifications: true },
+		stats: { puzzlesCreated: 0, puzzlesPlayed: 0, puzzlesCompleted: 0 },
+		pinned: []
+	};
+	await setDoc(
+		ref.user(u.uid),
+		{ ...payload, createdAt: serverTimestamp(), updatedAt: serverTimestamp() },
+		{ merge: true }
+	);
 }
 
 // Start or resume a "play" record for a given puzzle+user pair.
 // This enables progress tracking, timers, and analytics later on.
 export async function startPlay(puzzleId: string, uid: string) {
-  await setDoc(
-    ref.play(puzzleId, uid),
-    {
-      uid,
-      status: "in_progress",
-      guesses: [],
-      timeSpentSec: 0,
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-    },
-    { merge: true },
-  );
+	await setDoc(
+		ref.play(puzzleId, uid),
+		{
+			uid,
+			status: 'in_progress',
+			guesses: [],
+			timeSpentSec: 0,
+			createdAt: serverTimestamp(),
+			updatedAt: serverTimestamp()
+		},
+		{ merge: true }
+	);
 }
 
 // Toggle a "like" reaction on a puzzle for a given user.
 // Stored as a subdocument per (puzzleId, uid) for easy queries.
 export async function setLike(puzzleId: string, uid: string, like: boolean) {
-  if (like) {
-    await setDoc(ref.reaction(puzzleId, uid), { type: "like", createdAt: serverTimestamp() });
-  } else {
-    await deleteDoc(ref.reaction(puzzleId, uid));
-  }
+	if (like) {
+		await setDoc(ref.reaction(puzzleId, uid), { type: 'like', createdAt: serverTimestamp() });
+	} else {
+		await deleteDoc(ref.reaction(puzzleId, uid));
+	}
 }
 
 /* ------------------------------------------------------------------ */

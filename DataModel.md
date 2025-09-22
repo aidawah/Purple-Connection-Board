@@ -7,6 +7,7 @@ This document describes the **Firestore data model** for the Connection Board ap
 ## 📂 Collections & Documents
 
 ### `users/{uid}`
+
 Each user document mirrors Firebase Auth plus custom app fields.
 
 ```jsonc
@@ -38,6 +39,7 @@ Each user document mirrors Firebase Auth plus custom app fields.
 ---
 
 ### `puzzles/{puzzleId}`
+
 Each puzzle contains 4 categories × 4 words.
 
 ```jsonc
@@ -69,7 +71,8 @@ Each puzzle contains 4 categories × 4 words.
 
 #### 🔽 Subcollections
 
-**Plays:** `puzzles/{puzzleId}/plays/{playId}`  
+**Plays:** `puzzles/{puzzleId}/plays/{playId}`
+
 ```jsonc
 {
   "uid": "abc123",
@@ -85,7 +88,8 @@ Each puzzle contains 4 categories × 4 words.
 ```
 
 **Reactions (likes):**  
-`puzzles/{puzzleId}/reactions/{uid}` →  
+`puzzles/{puzzleId}/reactions/{uid}` →
+
 ```jsonc
 { "type": "like", "createdAt": <ts> }
 ```
@@ -112,6 +116,7 @@ Each puzzle contains 4 categories × 4 words.
 ---
 
 ### `activity/{activityId}`
+
 Global feed of puzzle and user actions.
 
 ```jsonc
@@ -201,31 +206,31 @@ service cloud.firestore {
 
 ```ts
 export const onReactionWrite = functions.firestore
-  .document("puzzles/{puzzleId}/reactions/{uid}")
-  .onWrite(async (chg, ctx) => {
-    const puzzleRef = db.doc(`puzzles/${ctx.params.puzzleId}`);
-    const inc = chg.after.exists && !chg.before.exists ? 1
-            : !chg.after.exists && chg.before.exists ? -1 : 0;
-    if (inc !== 0) {
-      await puzzleRef.update({ "stats.likes": FieldValue.increment(inc) });
-    }
-  });
+	.document('puzzles/{puzzleId}/reactions/{uid}')
+	.onWrite(async (chg, ctx) => {
+		const puzzleRef = db.doc(`puzzles/${ctx.params.puzzleId}`);
+		const inc =
+			chg.after.exists && !chg.before.exists ? 1 : !chg.after.exists && chg.before.exists ? -1 : 0;
+		if (inc !== 0) {
+			await puzzleRef.update({ 'stats.likes': FieldValue.increment(inc) });
+		}
+	});
 
 export const onPuzzleCreate = functions.firestore
-  .document("puzzles/{puzzleId}")
-  .onCreate(async (snap, ctx) => {
-    const p = snap.data();
-    await db.collection("activity").add({
-      type: "puzzle_created",
-      actor: p.createdBy,
-      puzzleId: ctx.params.puzzleId,
-      visibility: p.visibility,
-      createdAt: FieldValue.serverTimestamp()
-    });
-    await db.doc(`users/${p.createdBy.uid}`).update({
-      "stats.puzzlesCreated": FieldValue.increment(1)
-    });
-  });
+	.document('puzzles/{puzzleId}')
+	.onCreate(async (snap, ctx) => {
+		const p = snap.data();
+		await db.collection('activity').add({
+			type: 'puzzle_created',
+			actor: p.createdBy,
+			puzzleId: ctx.params.puzzleId,
+			visibility: p.visibility,
+			createdAt: FieldValue.serverTimestamp()
+		});
+		await db.doc(`users/${p.createdBy.uid}`).update({
+			'stats.puzzlesCreated': FieldValue.increment(1)
+		});
+	});
 ```
 
 ---
@@ -233,52 +238,53 @@ export const onPuzzleCreate = functions.firestore
 ## 🛠 Migration Steps (Hardcoded → Firestore)
 
 1. **Enable Firebase**
-   - Auth → Google Sign-in  
-   - Firestore → Production mode  
+   - Auth → Google Sign-in
+   - Firestore → Production mode
 
-2. **Add Security Rules** (above).  
+2. **Add Security Rules** (above).
 
 3. **Flag toggle for puzzles**
+
    ```ts
    export async function fetchPuzzles() {
-     if (!process.env.NEXT_PUBLIC_USE_REMOTE) return hardcodedPuzzles;
-     // else query Firestore
+   	if (!process.env.NEXT_PUBLIC_USE_REMOTE) return hardcodedPuzzles;
+   	// else query Firestore
    }
    ```
 
 4. **Seed Firestore**
-   Run a Node script that reads your current JSON and inserts into `puzzles`.  
+   Run a Node script that reads your current JSON and inserts into `puzzles`.
 
    ```ts
-   import { initializeApp, cert } from "firebase-admin/app";
-   import { getFirestore, FieldValue } from "firebase-admin/firestore";
-   import hardcoded from "./hardcoded.json";
+   import { initializeApp, cert } from 'firebase-admin/app';
+   import { getFirestore, FieldValue } from 'firebase-admin/firestore';
+   import hardcoded from './hardcoded.json';
 
-   initializeApp({ credential: cert(require("./sa.json")) });
+   initializeApp({ credential: cert(require('./sa.json')) });
    const db = getFirestore();
 
    async function seed(uid: string, displayName: string) {
-     for (const p of hardcoded) {
-       await db.collection("puzzles").add({
-         ...p,
-         createdBy: { uid, displayName },
-         visibility: "public",
-         stats: { plays: 0, completions: 0, avgTimeSec: 0, likes: 0 },
-         createdAt: FieldValue.serverTimestamp(),
-         updatedAt: FieldValue.serverTimestamp(),
-         publishedAt: FieldValue.serverTimestamp()
-       });
-     }
+   	for (const p of hardcoded) {
+   		await db.collection('puzzles').add({
+   			...p,
+   			createdBy: { uid, displayName },
+   			visibility: 'public',
+   			stats: { plays: 0, completions: 0, avgTimeSec: 0, likes: 0 },
+   			createdAt: FieldValue.serverTimestamp(),
+   			updatedAt: FieldValue.serverTimestamp(),
+   			publishedAt: FieldValue.serverTimestamp()
+   		});
+   	}
    }
-   seed("YOUR_UID", "You");
+   seed('YOUR_UID', 'You');
    ```
 
 5. **Switch code to Firestore**  
-   Replace all imports of local JSON with Firestore queries.  
+   Replace all imports of local JSON with Firestore queries.
 
-6. **Add gameplay writes** (plays, likes, etc).  
+6. **Add gameplay writes** (plays, likes, etc).
 
-7. **Remove hard-coded file** once tested.  
+7. **Remove hard-coded file** once tested.
 
 ---
 

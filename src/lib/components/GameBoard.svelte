@@ -65,8 +65,8 @@ $: showBrandEffective = Boolean(showBrand && brandSrc);
   let liveGroupTitle: Record<GID, string> = { A: "Group A", B: "Group B", C: "Group C", D: "Group D" };
   let solvedTitleByGroup: Record<GID, string> = { A: "", B: "", C: "", D: "" };
 
-  const RESOLVE_WRONG_MS = 450;
-  const RESOLVE_CORRECT_MS = 350;
+	const RESOLVE_WRONG_MS = 450;
+	const RESOLVE_CORRECT_MS = 350;
 
   $: puzzleKey = String(puzzle?.id ?? puzzleId ?? "live");
   let persist: ReturnType<typeof initRunPersistence> | null = null;
@@ -206,13 +206,16 @@ $: showBrandEffective = Boolean(showBrand && brandSrc);
     try {
       if (!puzzle) throw new Error("No puzzle provided");
 
-      if (resumeState?.order?.length === allIds.length) {
-        order = resumeState.order.map((orig) => allIds[orig]);
-      } else {
-        const ids = [...allIds];
-        const idxs = shuffled(ids.map((_, i) => i), initialSeed);
-        order = idxs.map((i) => ids[i]);
-      }
+			if (resumeState?.order?.length === allIds.length) {
+				order = resumeState.order.map((orig) => allIds[orig]);
+			} else {
+				const ids = [...allIds];
+				const idxs = shuffled(
+					ids.map((_, i) => i),
+					initialSeed
+				);
+				order = idxs.map((i) => ids[i]);
+			}
 
       selection = []; foundIds = []; solved = [];
       moves = 0; completed = false;
@@ -273,13 +276,13 @@ $: showBrandEffective = Boolean(showBrand && brandSrc);
     persistDebounced();
   }
 
-  function checkSelection() {
-    if (!puzzle) return;
-    resolving = true;
+	function checkSelection() {
+		if (!puzzle) return;
+		resolving = true;
 
-    const picked = selection.map((id) => words.find((w) => w.id === id)!);
-    const groupId = picked[0].groupId as GID;
-    const allSame = picked.every((w) => w.groupId === groupId);
+		const picked = selection.map((id) => words.find((w) => w.id === id)!);
+		const groupId = picked[0].groupId as GID;
+		const allSame = picked.every((w) => w.groupId === groupId);
 
     if (allSame) {
       const title = liveGroupTitle[groupId] || `Group ${groupId}`;
@@ -366,11 +369,11 @@ $: showBrandEffective = Boolean(showBrand && brandSrc);
     {/each}
   </div>
 
-  {#if showRing}
-    <div class="mt-4">
-      <CompletionRing size={88} />
-    </div>
-  {/if}
+	{#if showRing}
+		<div class="mt-4">
+			<CompletionRing size={88} />
+		</div>
+	{/if}
 
   {#if DEBUG}
     <pre class="text-xs text-zinc-500 mt-4">
@@ -380,7 +383,7 @@ $: showBrandEffective = Boolean(showBrand && brandSrc);
   categories: (puzzle as any)?.categories
 }, null, 2)}
     </pre>
-  {/if}
+	{/if}
 </div>
 
 <style>
