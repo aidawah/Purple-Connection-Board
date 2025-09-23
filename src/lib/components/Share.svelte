@@ -90,9 +90,7 @@
     }
   }
 
-  // System Share:
-  // 1) pre-copy the URL (so user can paste in LinkedIn if it strips the payload)
-  // 2) still send title/text/url for apps that honor it
+  // System Share (kept for convenience)
   async function webShare() {
     if (!canWebShareWithUrl) return;
 
@@ -115,7 +113,6 @@
     try {
       await navigator.clipboard.writeText(text);
     } catch {
-      // best-effort fallback
       const ta = document.createElement("textarea");
       ta.value = text;
       document.body.appendChild(ta);
@@ -125,34 +122,45 @@
     }
   }
 
+  // Accepts "217-440-4327", "(217) 440-4327", "2174404327", or "+12174404327"
   function normalizePhone(input: string) {
-    const digits = input.replace(/[^\d+]/g, "");
-    if (digits.startsWith("+")) return digits;
-    const just = digits.replace(/\D/g, "");
-    if (just.length === 10) return `+1${just}`;
-    return just || "";
+    if (!input) return "";
+    const trimmed = input.trim();
+    if (trimmed.startsWith("+")) return trimmed; // user provided E.164
+    const digits = trimmed.replace(/[^\d]/g, "");
+    if (digits.length === 10) return `+1${digits}`;
+    if (digits.length === 11 && digits.startsWith("1")) return `+${digits}`;
+    // let server decide; send raw if they typed +<country><number>
+    return digits || "";
   }
 
   async function sendSms() {
-    const n = normalizePhone(phone);
-    if (!n) return;
+    const to = normalizePhone(phone);
+    if (!to) {
+      smsError = "Enter a valid phone (e.g., 217-440-4327).";
+      return;
+    }
     sending = true;
     smsError = "";
 
-    const res = await fetch("/api/share-sms", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ to: n, title: puzzleTitle, url: shareUrl() })
-    });
+    try {
+      // 🔑 Twilio via your SvelteKit server route (NOT system messages)
+      const res = await fetch("/api/sms", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ to, puzzleId })
+      });
 
-    sending = false;
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
 
-    if (res.ok) {
+      showToast("Text sent!");
       open = false;
       phone = "";
-    } else {
-      const { error } = await res.json().catch(() => ({ error: "Unknown error" }));
-      smsError = error || "Failed to send.";
+    } catch (e: any) {
+      smsError = e?.message || "Failed to send.";
+    } finally {
+      sending = false;
     }
   }
 
@@ -199,7 +207,7 @@
             {copied ? "Copied!" : "Copy link"}
           </button>
 
-          <!-- System Share (pre-copies; no LinkedIn button) -->
+          <!-- System Share (optional) -->
           {#if canWebShareWithUrl}
             <button
               type="button"
@@ -214,14 +222,14 @@
         </div>
       </div>
 
-      <!-- SMS -->
+      <!-- SMS via Twilio -->
       <div class="mt-3">
         <label class="mb-1 block text-xs font-medium text-zinc-700 dark:text-zinc-300">Send via SMS</label>
         <div class="flex items-center gap-2">
           <input
             type="tel"
             inputmode="tel"
-            placeholder="Phone number"
+            placeholder="Phone number (e.g., 217-440-4327)"
             bind:value={phone}
             class="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-[color:var(--brand)] dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
           />
@@ -238,7 +246,7 @@
           <p class="mt-1 text-xs text-red-600 dark:text-red-400">{smsError}</p>
         {/if}
         <p class="mt-1 text-[11px] text-zinc-500 dark:text-zinc-400">
-          This opens your device’s Messages app with the link prefilled.
+          Uses Twilio to send a text with your puzzle link.
         </p>
       </div>
 
