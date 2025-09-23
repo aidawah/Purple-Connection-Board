@@ -1,0 +1,19 @@
+    <svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080">
+      <defs>
+
+<pattern id="tile" patternUnits="userSpaceOnUse" width="160" height="160">
+  <rect width="160" height="160" fill="#ecfdf5"/>
+  <g opacity=".45">
+    <circle cx="40" cy="40" r="16" fill="#f9a8d4"/>
+    <circle cx="120" cy="80" r="14" fill="#86efac"/>
+    <circle cx="70" cy="120" r="15" fill="#a7f3d0"/>
+  </g>
+  <circle cx="40" cy="40" r="4" fill="#fef08a"/>
+  <circle cx="120" cy="80" r="4" fill="#fef08a"/>
+  <circle cx="70" cy="120" r="4" fill="#fef08a"/>
+</pattern>
+
+      </defs>
+      <rect width="100%" height="100%" fill="#ecfdf5"/>
+      <rect width="100%" height="100%" fill="url(#tile)"/>
+    </svg>

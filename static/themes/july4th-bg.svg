@@ -1,0 +1,21 @@
+    <svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080">
+      <defs>
+
+<pattern id="tile" patternUnits="userSpaceOnUse" width="240" height="160">
+  <rect width="240" height="160" fill="#eff6ff"/>
+  <g>
+    <rect y="0" width="240" height="20" fill="#fde68a" opacity=".25"/>
+    <rect y="40" width="240" height="20" fill="#fde68a" opacity=".25"/>
+    <rect y="80" width="240" height="20" fill="#fde68a" opacity=".25"/>
+    <rect y="120" width="240" height="20" fill="#fde68a" opacity=".25"/>
+  </g>
+  <g fill="#1d4ed8" opacity=".6">
+    <polygon points="30,30 34,42 47,42 36,50 40,62 30,54 20,62 24,50 13,42 26,42"/>
+    <polygon points="200,110 204,122 217,122 206,130 210,142 200,134 190,142 194,130 183,122 196,122"/>
+  </g>
+</pattern>
+
+      </defs>
+      <rect width="100%" height="100%" fill="#eff6ff"/>
+      <rect width="100%" height="100%" fill="url(#tile)"/>
+    </svg>

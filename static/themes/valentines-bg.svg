@@ -1,0 +1,17 @@
+    <svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080">
+      <defs>
+
+<pattern id="tile" patternUnits="userSpaceOnUse" width="160" height="160">
+  <rect width="160" height="160" fill="#fff1f2"/>
+  <g fill="#f472b6" opacity=".5">
+    <path d="M40 60
+      c0 -10 12 -16 20 -8 c8 -8 20 -2 20 8 c0 14 -20 24 -20 24 s-20 -10 -20 -24z"/>
+    <path d="M120 110
+      c0 -10 12 -16 20 -8 c8 -8 20 -2 20 8 c0 14 -20 24 -20 24 s-20 -10 -20 -24z"/>
+  </g>
+</pattern>
+
+      </defs>
+      <rect width="100%" height="100%" fill="#fff1f2"/>
+      <rect width="100%" height="100%" fill="url(#tile)"/>
+    </svg>
