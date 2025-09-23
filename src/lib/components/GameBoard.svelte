@@ -15,12 +15,11 @@
     | { order?: number[]; solvedByOrig?: boolean[]; selectedOrig?: number[]; selectedSi?: number[]; selectedWords?: string[] }
     | null = null;
 
-export let showControls: boolean = true;
-// brand disabled by default; only renders if parent sets showBrand={true} and provides a src
-export let brandSrc: string | null = null;
-export let showBrand: boolean = false;
-$: showBrandEffective = Boolean(showBrand && brandSrc);
-
+  export let showControls: boolean = true;
+  // brand disabled by default; only renders if parent sets showBrand={true} and provides a src
+  export let brandSrc: string | null = null;
+  export let showBrand: boolean = false;
+  $: showBrandEffective = Boolean(showBrand && brandSrc);
 
   export let celebrateOnComplete: boolean = true;
   export let DEBUG = false;
@@ -65,8 +64,8 @@ $: showBrandEffective = Boolean(showBrand && brandSrc);
   let liveGroupTitle: Record<GID, string> = { A: "Group A", B: "Group B", C: "Group C", D: "Group D" };
   let solvedTitleByGroup: Record<GID, string> = { A: "", B: "", C: "", D: "" };
 
-	const RESOLVE_WRONG_MS = 450;
-	const RESOLVE_CORRECT_MS = 350;
+  const RESOLVE_WRONG_MS = 450;
+  const RESOLVE_CORRECT_MS = 350;
 
   $: puzzleKey = String(puzzle?.id ?? puzzleId ?? "live");
   let persist: ReturnType<typeof initRunPersistence> | null = null;
@@ -206,16 +205,13 @@ $: showBrandEffective = Boolean(showBrand && brandSrc);
     try {
       if (!puzzle) throw new Error("No puzzle provided");
 
-			if (resumeState?.order?.length === allIds.length) {
-				order = resumeState.order.map((orig) => allIds[orig]);
-			} else {
-				const ids = [...allIds];
-				const idxs = shuffled(
-					ids.map((_, i) => i),
-					initialSeed
-				);
-				order = idxs.map((i) => ids[i]);
-			}
+      if (resumeState?.order?.length === allIds.length) {
+        order = resumeState.order.map((orig) => allIds[orig]);
+      } else {
+        const ids = [...allIds];
+        const idxs = shuffled(ids.map((_, i) => i), initialSeed);
+        order = idxs.map((i) => ids[i]);
+      }
 
       selection = []; foundIds = []; solved = [];
       moves = 0; completed = false;
@@ -276,13 +272,13 @@ $: showBrandEffective = Boolean(showBrand && brandSrc);
     persistDebounced();
   }
 
-	function checkSelection() {
-		if (!puzzle) return;
-		resolving = true;
+  function checkSelection() {
+    if (!puzzle) return;
+    resolving = true;
 
-		const picked = selection.map((id) => words.find((w) => w.id === id)!);
-		const groupId = picked[0].groupId as GID;
-		const allSame = picked.every((w) => w.groupId === groupId);
+    const picked = selection.map((id) => words.find((w) => w.id === id)!);
+    const groupId = picked[0].groupId as GID;
+    const allSame = picked.every((w) => w.groupId === groupId);
 
     if (allSame) {
       const title = liveGroupTitle[groupId] || `Group ${groupId}`;
@@ -309,11 +305,14 @@ $: showBrandEffective = Boolean(showBrand && brandSrc);
       }, RESOLVE_WRONG_MS);
     }
   }
+
+  // Bind the grid wrapper so CompletionRing can align to it
+  let gridWrap: HTMLDivElement | null = null;
 </script>
 
 <div class="w-full flex flex-col items-center gap-4">
   {#if showBrandEffective}
-    <img src={brandSrc} alt="brand" class="h-8 opacity-80 mt-2" />
+    <img src={brandSrc!} alt="brand" class="h-8 opacity-80 mt-2" />
   {/if}
 
   {#if showControls}
@@ -323,7 +322,8 @@ $: showBrandEffective = Boolean(showBrand && brandSrc);
     </div>
   {/if}
 
-  <div class="grid grid-cols-4 gap-2 w-full max-w-[680px] px-3 sm:px-0" class:animate-puzzle-shake={shaking}>
+  <!-- Make this the anchor; the ring measures this rect to place the burst -->
+  <div bind:this={gridWrap} class="relative grid grid-cols-4 gap-2 w-full max-w-[680px] px-3 sm:px-0" class:animate-puzzle-shake={shaking}>
     {#each order as id (id)}
       {@const w = words.find((w) => w.id === id)}
       {#if w}
@@ -369,11 +369,23 @@ $: showBrandEffective = Boolean(showBrand && brandSrc);
     {/each}
   </div>
 
-	{#if showRing}
-		<div class="mt-4">
-			<CompletionRing size={88} />
-		</div>
-	{/if}
+  <!-- Canvas-based completion effect aligned to the grid wrapper -->
+  <CompletionRing
+    visible={showRing}
+    anchor={gridWrap}
+    spotImage="HealthSpaces_Icon6_circle.png"
+    pad={36}
+    patternScale={2.4}
+
+    
+    slowFactor={0.55}
+    autoHideMs={3200}
+    durationMin={1.4}
+    durationMax={2.2}
+    sizeMin={28}
+    sizeMax={44}
+    debug={false}
+  />
 
   {#if DEBUG}
     <pre class="text-xs text-zinc-500 mt-4">
@@ -383,7 +395,7 @@ $: showBrandEffective = Boolean(showBrand && brandSrc);
   categories: (puzzle as any)?.categories
 }, null, 2)}
     </pre>
-	{/if}
+  {/if}
 </div>
 
 <style>
