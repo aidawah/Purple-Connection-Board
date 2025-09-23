@@ -1,141 +1,272 @@
 <script lang="ts">
-	export let visible = false;
-	export let spotImage: string = '/images/HealthSpaces_Icon6_circle.png';
-	export let patternScale = 2.0;
-	export let slowFactor = 0.75;
-	export let sizeMin = 12;
-	export let sizeMax = 20;
-	export let pad = 28;
-	export let autoHideMs = 2500;
+  import { onMount, onDestroy } from "svelte";
+  import { assets } from "$app/paths";
 
-	let seed = 1234567;
-	const rand = () => (seed = (seed * 1664525 + 1013904223) % 2 ** 32) / 2 ** 32;
-	const rnd = (min: number, max: number) => min + (max - min) * rand();
+  /** Public API */
+  export let visible: boolean | number = false;              // boolean or incrementing number
+  export let spotImage: string = "HealthSpaces_Icon6_circle.png"; // /static filename
+  export let anchor: HTMLElement | null = null;              // optional grid wrapper for precise alignment
 
-	type Spot = {
-		i: number;
-		x: number;
-		y: number;
-		size: number;
-		dx: number;
-		dy: number;
-		rotOriginX: number;
-		rotOriginY: number;
-		delay: number;
-		duration: number;
-	};
-	const SPOT_COUNT = 52;
+  // Motion / layout
+  export let pad = 28;                   // ring sits this many px outside the grid bounds
+  export let patternScale = 3.0;         // particle density multiplier
+  export let slowFactor = 0.9;           // lower = slower outward travel
+  export let durationMin = 0.72;         // per-sprite min duration (seconds)
+  export let durationMax = 2.36;         // per-sprite max duration (seconds)
 
-	function buildSpots(scale: number, slow: number, smin: number, smax: number): Spot[] {
-		const raw: { i: number; left: number; top: number }[] = [];
-		for (let i = 1; i <= SPOT_COUNT; i++) {
-			let left = 0,
-				top = 0;
-			if (i <= 20) {
-				left = -25 + i * 12;
-				top = 50;
-			} else if (i <= 40) {
-				left = -255 + i * 12;
-				top = -12;
-			} else if (i <= 46) {
-				left = 204;
-				top = -488 + i * 12;
-			} else {
-				left = -10;
-				top = -568 + i * 12;
-			}
-			raw.push({ i, left, top });
-		}
-		const xs = raw.map((p) => p.left),
-			ys = raw.map((p) => p.top);
-		const cx = (Math.min(...xs) + Math.max(...xs)) / 2;
-		const cy = (Math.min(...ys) + Math.max(...ys)) / 2;
+  // Visuals
+  export let sizeMin = 26;               // sprite min size (px)
+  export let sizeMax = 42;               // sprite max size (px)
+  export let zIndex = 2147483647;        // draw above everything
+  export let debug = false;              // outline the anchor rect & crosshair
 
-		const spots: Spot[] = [];
-		for (const { i, left, top } of raw) {
-			const x = (left - cx) * scale;
-			const y = (top - cy) * scale;
-			const size = Math.floor(rnd(smin, smax));
-			let dx = 0,
-				dy = 0;
-			if (i <= 20) {
-				dx = (-20 + i * 2) * scale * slow;
-				dy = 30 * scale * slow;
-			} else if (i <= 40) {
-				dx = (-50 + i * 2) * scale * slow;
-				dy = -30 * scale * slow;
-			} else if (i <= 45) {
-				dx = 40 * scale * slow;
-				dy = (-86 + i * 2) * scale * slow;
-			} else {
-				dx = -40 * scale * slow;
-				dy = (-99 + i * 2) * scale * slow;
-			}
-			const rotOriginX = (90 + Math.floor(rnd(-10, 0))) * scale;
-			const rotOriginY = (20 + Math.floor(rnd(-10, 0))) * scale;
-			const delay = +rnd(0.1, 1.0).toFixed(2);
-			const duration = +rnd(0.8, 1.6).toFixed(2);
-			spots.push({ i, x, y, size, dx, dy, rotOriginX, rotOriginY, delay, duration });
-		}
-		return spots;
-	}
+  // Life
+  export let autoHideMs = 3600;          // total life of burst (ms)
 
-	let spots = buildSpots(patternScale, slowFactor, sizeMin, sizeMax);
-	$: spots = buildSpots(patternScale, slowFactor, sizeMin, sizeMax);
+  // Resolve static asset robustly (handles base path + strips directories)
+  $: resolvedSrc = `${assets}/${(spotImage || "").split(/[/\\]/).pop() || "HealthSpaces_Icon6_circle.png"}`;
 
-	$: if (visible && autoHideMs > 0) {
-		const t = setTimeout(() => (visible = false), autoHideMs);
-		() => clearTimeout(t);
-	}
+  // Canvas overlay (fixed, full viewport)
+  let canvas: HTMLCanvasElement | null = null;
+  let ctx: CanvasRenderingContext2D | null = null;
 
-	const anchors = [
-		{ left: '50%', top: `calc(-1 * var(--pad))`, tx: '-50%', ty: '0', rot: 0 },
-		{ left: '100%', top: `calc(-1 * var(--pad))`, tx: '-100%', ty: '0', rot: 15 },
-		{ left: '0%', top: `calc(-1 * var(--pad))`, tx: '0', ty: '0', rot: -15 },
-		{ left: `calc(100% + var(--pad))`, top: '50%', tx: '0', ty: '-50%', rot: 90 },
-		{ left: `calc(-1 * var(--pad))`, top: '50%', tx: '0', ty: '-50%', rot: -90 },
-		{ left: '50%', top: `calc(100% + var(--pad))`, tx: '-50%', ty: '-100%', rot: 180 },
-		{ left: '100%', top: `calc(100% + var(--pad))`, tx: '-100%', ty: '-100%', rot: 165 },
-		{ left: '0%', top: `calc(100% + var(--pad))`, tx: '0', ty: '-100%', rot: -165 }
-	];
+  type Spot = {
+    sx: number; sy: number;   // start position (viewport px)
+    dx: number; dy: number;   // normalized outward direction
+    dist: number;             // travel distance to go off-screen
+    size: number;             // sprite size (px)
+    delay: number;            // sec
+    dur: number;              // sec
+    rot0: number;             // initial rotation (rad)
+    rps: number;              // rotations per second
+  };
+
+  let spots: Spot[] = [];
+  let img: HTMLImageElement | null = null;
+  let imgLoaded = false;
+
+  let raf = 0;
+  let playing = false;
+  let tStart = 0;
+  let lastTriggerKey: string | number | boolean = false;
+
+  const clamp = (n: number, a: number, b: number) => Math.max(a, Math.min(b, n));
+  const rnd   = (min: number, max: number) => Math.random() * (max - min) + min;
+  const rndi  = (min: number, max: number) => Math.floor(rnd(min, max + 1));
+
+  function getAnchorEl(): HTMLElement | null {
+    if (anchor) return anchor;
+    // canvas is inside <div> which is inside your grid wrapper — parentElement?.parentElement keeps it robust
+    const parent = canvas?.parentElement?.parentElement;
+    return (parent as HTMLElement) || document.body;
+  }
+
+  function measure() {
+    const el = getAnchorEl();
+    if (!el) return null;
+
+    const r = el.getBoundingClientRect();
+    const vw = Math.max(document.documentElement.clientWidth,  window.innerWidth  || 0);
+    const vh = Math.max(document.documentElement.clientHeight, window.innerHeight || 0);
+
+    const cx = r.left + r.width / 2;
+    const cy = r.top  + r.height / 2;
+    const rx = r.width  / 2 + pad;
+    const ry = r.height / 2 + pad;
+
+    return { rect: r, vw, vh, cx, cy, rx, ry };
+  }
+
+  function buildSpots() {
+    const m = measure();
+    if (!m) { spots = []; return; }
+
+    const { rect, vw, vh, cx, cy, rx, ry } = m;
+    const perimeter = 2 * (rect.width + rect.height);
+    const count = clamp(Math.round((perimeter / 26) * patternScale), 60, 280);
+
+    const arr: Spot[] = [];
+    for (let i = 0; i < count; i++) {
+      const t = (i / count) * Math.PI * 2 + rnd(-0.10, 0.10);
+
+      // Start on ellipse around the grid
+      const sx = cx + rx * Math.cos(t);
+      const sy = cy + ry * Math.sin(t);
+
+      // Outward direction (normalized)
+      let dx = Math.cos(t);
+      let dy = Math.sin(t);
+      const len = Math.hypot(dx, dy) || 1;
+      dx /= len; dy /= len;
+
+      // Travel until off-screen (with slight overshoot)
+      const maxX = dx >= 0 ? vw - sx : sx;
+      const maxY = dy >= 0 ? vh - sy : sy;
+      const travel = Math.hypot(maxX * dx, maxY * dy) * rnd(1.05, 1.20) * slowFactor;
+
+      arr.push({
+        sx, sy, dx, dy,
+        dist: travel,
+        size: rndi(sizeMin, sizeMax),
+        delay: rnd(0.0, 0.18),
+        dur: rnd(durationMin, durationMax),
+        rot0: rnd(0, Math.PI * 2),
+        rps: rnd(0.35, 0.75)
+      });
+    }
+    spots = arr;
+    if (debug) console.log("[CompletionRing] spots", spots.length);
+  }
+
+  function easeOutCubic(u: number) {
+    const t = clamp(u, 0, 1);
+    return 1 - Math.pow(1 - t, 3);
+  }
+
+  function alphaCurve(u: number) {
+    // Fade in 0..0.12, hold 0.12..0.75, fade out 0.75..1
+    if (u <= 0) return 0;
+    if (u < 0.12) return u / 0.12;
+    if (u < 0.75) return 1;
+    if (u < 1.0)  return 1 - (u - 0.75) / 0.25;
+    return 0;
+  }
+
+  function draw(nowMs: number) {
+    if (!canvas || !ctx) return;
+    const dpr = window.devicePixelRatio || 1;
+    const W = window.innerWidth;
+    const H = window.innerHeight;
+
+    // Resize canvas for crispness
+    const targetW = Math.floor(W * dpr);
+    const targetH = Math.floor(H * dpr);
+    if (canvas.width !== targetW || canvas.height !== targetH) {
+      canvas.width = targetW;
+      canvas.height = targetH;
+      canvas.style.width  = `${W}px`;
+      canvas.style.height = `${H}px`;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    }
+
+    ctx.clearRect(0, 0, W, H);
+
+    const tNow = (nowMs - tStart) / 1000; // seconds since start
+
+    for (const s of spots) {
+      const local = (tNow - s.delay) / s.dur; // 0..1 in its own schedule
+      if (local <= 0 || local >= 1) continue;
+
+      const p = easeOutCubic(local);
+      const x = s.sx + s.dx * s.dist * p;
+      const y = s.sy + s.dy * s.dist * p;
+
+      const a = alphaCurve(local);
+      if (a <= 0) continue;
+
+      const angle = s.rot0 + (nowMs / 1000) * (Math.PI * 2) * s.rps;
+
+      ctx.save();
+      ctx.globalAlpha = a;
+      ctx.translate(x, y);
+      ctx.rotate(angle);
+
+      // Soft shadow
+      ctx.shadowColor = "rgba(0,0,0,0.28)";
+      ctx.shadowBlur = 6;
+      ctx.shadowOffsetX = 0;
+      ctx.shadowOffsetY = 1;
+
+      const w = s.size, h = s.size;
+
+      // ✅ Only draw your PNG (NO colored fallback to avoid tinting the UI)
+      if (imgLoaded && img) {
+        ctx.drawImage(img, -w / 2, -h / 2, w, h);
+      }
+      // else: draw nothing until image loads
+
+      ctx.restore();
+    }
+
+    if (debug) {
+      const m = measure();
+      if (m) {
+        // Anchor outline and crosshair (no tint fill)
+        ctx.save();
+        ctx.strokeStyle = "rgba(0,0,0,0.8)";
+        ctx.lineWidth = 2;
+        ctx.strokeRect(m.rect.left, m.rect.top, m.rect.width, m.rect.height);
+        ctx.beginPath();
+        ctx.moveTo(m.cx - 8, m.cy);
+        ctx.lineTo(m.cx + 8, m.cy);
+        ctx.moveTo(m.cx, m.cy - 8);
+        ctx.lineTo(m.cx, m.cy + 8);
+        ctx.stroke();
+        ctx.restore();
+      }
+    }
+  }
+
+  function tick(now: number) {
+    if (!playing) return;
+    draw(now);
+    if (now - tStart >= autoHideMs) {
+      playing = false;
+      return;
+    }
+    raf = requestAnimationFrame(tick);
+  }
+
+  function start() {
+    if (!canvas) return;
+    if (!ctx) ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    buildSpots();
+    tStart = performance.now();
+    playing = true;
+    cancelAnimationFrame(raf);
+    raf = requestAnimationFrame(tick);
+  }
+
+  // React to visible toggle or numeric trigger
+  $: {
+    const key = typeof visible === "number" ? visible : (visible ? "on" : "off");
+    if (key !== lastTriggerKey && (typeof visible === "number" ? visible > 0 : !!visible)) {
+      lastTriggerKey = key;
+      // Two frames so card flips/layout settle before measuring
+      requestAnimationFrame(() => requestAnimationFrame(start));
+    }
+  }
+
+  // Image + listeners
+  let resizeHandler = () => { /* canvas resizes on next frame */ };
+
+  onMount(() => {
+    img = new Image();
+    img.onload = () => { imgLoaded = true; if (debug) console.info("[CompletionRing] image OK:", resolvedSrc); };
+    img.onerror = () => { imgLoaded = false; console.warn("[CompletionRing] image 404:", resolvedSrc); };
+    img.src = resolvedSrc;
+
+    resizeHandler = () => { /* drawing path handles size; nothing to do here */ };
+    window.addEventListener("resize", resizeHandler);
+  });
+
+  onDestroy(() => {
+    cancelAnimationFrame(raf);
+    window.removeEventListener("resize", resizeHandler);
+  });
 </script>
 
-{#if visible}
-	<div class="pointer-events-none absolute inset-0 z-10" style={`--pad:${pad}px`}>
-		{#each anchors as a}
-			<div
-				class="absolute"
-				style={`left:${a.left}; top:${a.top}; transform: translate(${a.tx}, ${a.ty}) rotate(${a.rot}deg);`}
-			>
-				{#each spots as s}
-					<span
-						class="absolute opacity-0"
-						style="
-              left: calc({s.x}px); top: calc({s.y}px);
-              width: {s.size}px; height:{s.size}px;
-              margin-left: calc({s.size}px / -2); margin-top: calc({s.size}px / -2);
-              background-image: url('{spotImage}');
-              background-size: contain; background-repeat: no-repeat;
-              filter: drop-shadow(0 0 0.4px rgba(0,0,0,.25));
-              animation: fly {s.duration}s {s.delay}s linear infinite;
-              --dx: {s.dx}px; --dy: {s.dy}px;
-            "
-					/>
-				{/each}
-			</div>
-		{/each}
-	</div>
-{/if}
+<!-- Full-viewport canvas overlay (no color fill) -->
+<div class="absolute inset-0 pointer-events-none" style={`z-index:${zIndex};`}>
+  <canvas
+    bind:this={canvas}
+    class="fixed inset-0 pointer-events-none block"
+    style={`z-index:${zIndex}; width:100vw; height:100vh;`}
+  />
+</div>
 
 <style>
-	@keyframes fly {
-		from {
-			opacity: 0;
-			transform: translate(0, 0);
-		}
-		to {
-			opacity: 0.9;
-			transform: translate(var(--dx), var(--dy));
-		}
-	}
+  /* No CSS animations here; all motion is on the canvas. */
 </style>
