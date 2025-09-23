@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import { browser } from '$app/environment';
 	import CustomSelect from '$lib/components/DropdownSelect.svelte';
+	import PuzzlePreview from '$lib/components/PuzzlePreview.svelte';
 	import { fetchBrowsePuzzles } from '$lib/firebase';
 
 	const BRAND = '#14b8a6';
@@ -17,6 +18,7 @@
 		imageUrl: string;
 		isPinned: boolean;
 		createdAt: string;
+		previewWords: string[];
 	};
 
 	let allPuzzles: UIPuzzle[] = [];
@@ -134,31 +136,25 @@
 			<div
 				class="overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-sm transition hover:shadow-md dark:border-zinc-800 dark:bg-zinc-900"
 			>
-				<div
-					class="relative flex aspect-video items-center justify-center bg-gradient-to-br from-[color:var(--brand)]/10 to-emerald-200/20 dark:from-[color:var(--brand)]/20 dark:to-emerald-900/10"
-				>
-					{#if puzzle.imageUrl}
-						<img
-							src={puzzle.imageUrl}
-							alt={puzzle.title}
-							class="h-full w-full object-cover"
-							loading="lazy"
-						/>
-					{/if}
-					{#if puzzle.isPinned}
-						<svg
-							xmlns="http://www.w3.org/2000/svg"
-							viewBox="0 0 24 24"
-							fill="currentColor"
-							class="absolute top-2 right-2 h-5 w-5 rotate-[-20deg] text-[color:var(--brand)] drop-shadow"
-							aria-label="Pinned"
-						>
-							<circle cx="12" cy="7" r="3" />
-							<rect x="11" y="9.5" width="2" height="7.5" rx="1" />
-							<path d="M12 17l-2 5h4l-2-5z" />
-						</svg>
-					{/if}
-				</div>
+<div class="relative">
+  <!-- Live mini gameboard -->
+  <PuzzlePreview puzzleId={puzzle.id} />
+
+  {#if puzzle.isPinned}
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 24 24"
+      fill="currentColor"
+      class="absolute top-2 right-2 h-5 w-5 rotate-[-20deg] text-[color:var(--brand)] drop-shadow"
+      aria-label="Pinned"
+    >
+      <circle cx="12" cy="7" r="3" />
+      <rect x="11" y="9.5" width="2" height="7.5" rx="1" />
+      <path d="M12 17l-2 5h4l-2-5z" />
+    </svg>
+  {/if}
+</div>
+
 
 				<div class="p-6">
 					<div class="mb-3 flex items-start justify-between">
