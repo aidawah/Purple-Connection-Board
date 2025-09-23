@@ -4,17 +4,28 @@
   import { page } from "$app/stores";
   import { get } from "svelte/store";
 
+  // ---- Props ----
   export let puzzleId: string;
   export let puzzleTitle = "Puzzle";
-  export let fullWidth = false;           // ⬅️ NEW: fill parent (grid cell)
+  export let fullWidth = false; // fill parent (grid cell)
+  // Optional: set a public origin if you test on localhost
+  export let publicBaseUrl: string | null = null;
+
+  // ---- Constants ----
   const routeBase = "/gameboard";
 
+  // ---- State ----
   let open = false;
   let phone = "";
   let copied = false;
   let canWebShare = false;
+  let canWebShareWithUrl = false;
+  let sending = false;
+  let smsError = "";
+  let toast = "";
+  let toastTimer: number | null = null;
 
-  // Route-aware styling (outline on /profile, filled elsewhere)
+  // ---- Variant (route-aware styling) ----
   type Variant = "cardAction" | "filled";
   function pickVariant(pathname: string): Variant {
     return pathname.startsWith("/profile") ? "cardAction" : "filled";
@@ -22,6 +33,7 @@
   $: currentPath = get(page).url.pathname;
   $: variant = pickVariant(currentPath);
 
+  // ---- Classes ----
   $: widthClass = fullWidth ? "w-full" : "";
   $: btnClass =
     `flex h-10 ${widthClass} items-center justify-center gap-2 rounded-md text-sm font-medium transition focus:outline-none focus:ring-2 focus:ring-[color:var(--brand)]/40 ` +
@@ -29,7 +41,9 @@
       ? "border border-[color:var(--brand)]/30 px-3 text-[color:var(--brand)] hover:bg-[color:var(--brand)]/10"
       : "bg-[color:var(--brand)] px-4 text-white shadow-sm hover:brightness-95");
 
+  // ---- URL helpers ----
   function getOrigin() {
+    if (publicBaseUrl) return publicBaseUrl.replace(/\/+$/, "");
     if (!browser) return "https://example.com";
     return window.location.origin;
   }
@@ -37,15 +51,32 @@
     return `${getOrigin()}${routeBase}/${encodeURIComponent(puzzleId)}`;
   }
 
+  // ---- Lifecycle ----
   onMount(() => {
     canWebShare = typeof navigator !== "undefined" && !!navigator.share;
+    try {
+      // @ts-expect-error: optional API
+      canWebShareWithUrl = !!navigator?.canShare?.({ url: shareUrl() }) || canWebShare;
+    } catch {
+      canWebShareWithUrl = canWebShare;
+    }
   });
 
+  // ---- Toast helper ----
+  function showToast(msg: string, ms = 1800) {
+    toast = msg;
+    if (toastTimer) window.clearTimeout(toastTimer);
+    // @ts-expect-error setTimeout typing
+    toastTimer = window.setTimeout(() => (toast = ""), ms);
+  }
+
+  // ---- Actions ----
   async function copyLink() {
     try {
       await navigator.clipboard.writeText(shareUrl());
       copied = true;
-      setTimeout(() => (copied = false), 1500);
+      showToast("Link copied");
+      setTimeout(() => (copied = false), 1200);
     } catch {
       const ta = document.createElement("textarea");
       ta.value = shareUrl();
@@ -54,20 +85,44 @@
       document.execCommand("copy");
       document.body.removeChild(ta);
       copied = true;
-      setTimeout(() => (copied = false), 1500);
+      showToast("Link copied");
+      setTimeout(() => (copied = false), 1200);
     }
   }
 
+  // System Share:
+  // 1) pre-copy the URL (so user can paste in LinkedIn if it strips the payload)
+  // 2) still send title/text/url for apps that honor it
   async function webShare() {
-    if (!canWebShare) return;
+    if (!canWebShareWithUrl) return;
+
+    const url = shareUrl();
+    const title = `Play "${puzzleTitle}"`;
+    const text = `Try my puzzle: ${puzzleTitle}\n${url}`;
+
+    await copySilently(url);
+    showToast("Link copied — paste in LinkedIn");
+
     try {
-      await navigator.share({
-        title: `Play “${puzzleTitle}”`,
-        text: `Try my puzzle: ${puzzleTitle}`,
-        url: shareUrl()
-      });
+      await navigator.share({ title, text, url });
       open = false;
-    } catch {}
+    } catch {
+      // user canceled; no-op
+    }
+  }
+
+  async function copySilently(text: string) {
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      // best-effort fallback
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand("copy");
+      document.body.removeChild(ta);
+    }
   }
 
   function normalizePhone(input: string) {
@@ -77,75 +132,65 @@
     if (just.length === 10) return `+1${just}`;
     return just || "";
   }
-  function makeSmsUrl(targetPhone: string, body: string) {
-    const isIOS =
-      typeof navigator !== "undefined" && /iPad|iPhone|iPod/.test(navigator.userAgent);
-    const encoded = encodeURIComponent(body);
-    return `sms:${targetPhone}${isIOS ? "&" : "?"}body=${encoded}`;
+
+  async function sendSms() {
+    const n = normalizePhone(phone);
+    if (!n) return;
+    sending = true;
+    smsError = "";
+
+    const res = await fetch("/api/share-sms", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ to: n, title: puzzleTitle, url: shareUrl() })
+    });
+
+    sending = false;
+
+    if (res.ok) {
+      open = false;
+      phone = "";
+    } else {
+      const { error } = await res.json().catch(() => ({ error: "Unknown error" }));
+      smsError = error || "Failed to send.";
+    }
   }
-let sending = false;
-let smsError = '';
-
-async function sendSms() {
-  const n = normalizePhone(phone);
-  if (!n) return;
-  sending = true;
-  smsError = '';
-
-  const res = await fetch('/api/share-sms', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      to: n,
-      title: puzzleTitle,
-      url: shareUrl()
-    })
-  });
-
-  sending = false;
-
-  if (res.ok) {
-    open = false;
-    phone = '';
-  } else {
-    const { error } = await res.json().catch(() => ({ error: 'Unknown error' }));
-    smsError = error || 'Failed to send.';
-  }
-}
-
 
   $: phone = phone.trim();
 </script>
 
 <div class="relative">
-<button
-  type="button"
-  class={`flex h-10 w-full items-center justify-center gap-2 rounded-md text-sm font-medium transition focus:outline-none focus:ring-2 focus:ring-[color:var(--brand)]/40
-    ${variant === "cardAction"
-      ? "border border-[color:var(--brand)]/30 text-[color:var(--brand)] hover:bg-[color:var(--brand)]/10"
-      : "bg-[color:var(--brand)] text-white shadow-sm hover:brightness-95"}`}
-  on:click={() => (open = !open)}
-  aria-haspopup="dialog"
-  aria-expanded={open}
->
-  Share
-</button>
-
+  <button
+    type="button"
+    class={`flex h-10 w-full items-center justify-center gap-2 rounded-md text-sm font-medium transition focus:outline-none focus:ring-2 focus:ring-[color:var(--brand)]/40
+      ${variant === "cardAction"
+        ? "border border-[color:var(--brand)]/30 text-[color:var(--brand)] hover:bg-[color:var(--brand)]/10"
+        : "bg-[color:var(--brand)] text-white shadow-sm hover:brightness-95"}`}
+    on:click={() => (open = !open)}
+    aria-haspopup="dialog"
+    aria-expanded={open}
+  >
+    Share
+  </button>
 
   {#if open}
     <div
       class="absolute right-0 z-30 mt-2 w-80 rounded-xl border border-zinc-200 bg-white p-4 shadow-lg dark:border-zinc-800 dark:bg-zinc-900"
       role="dialog"
+      aria-label="Share menu"
     >
       <div class="mb-3 text-sm font-semibold text-zinc-900 dark:text-zinc-100">
         Share “{puzzleTitle}”
       </div>
 
+      <!-- Link preview + actions -->
       <div class="mb-3">
         <div class="break-all rounded-lg border border-zinc-200 bg-zinc-50 p-2 text-xs text-zinc-700 dark:border-zinc-800 dark:bg-zinc-800 dark:text-zinc-200">
           {shareUrl()}
         </div>
-        <div class="mt-2 flex items-center gap-2">
+
+        <div class="mt-2 flex flex-wrap items-center gap-2">
+          <!-- Copy -->
           <button
             type="button"
             class="rounded-md bg-[color:var(--brand)] px-3 py-2 text-xs font-semibold text-white shadow-sm transition hover:brightness-95 focus:outline-none focus:ring-2 focus:ring-[color:var(--brand)]/40"
@@ -153,11 +198,15 @@ async function sendSms() {
           >
             {copied ? "Copied!" : "Copy link"}
           </button>
-          {#if canWebShare}
+
+          <!-- System Share (pre-copies; no LinkedIn button) -->
+          {#if canWebShareWithUrl}
             <button
               type="button"
               class="rounded-md border border-[color:var(--brand)]/30 px-3 py-2 text-xs font-medium text-[color:var(--brand)] transition hover:bg-[color:var(--brand)]/10 focus:outline-none focus:ring-2 focus:ring-[color:var(--brand)]/40"
               on:click={webShare}
+              aria-label="Open system share"
+              title="System share"
             >
               System share
             </button>
@@ -165,6 +214,7 @@ async function sendSms() {
         </div>
       </div>
 
+      <!-- SMS -->
       <div class="mt-3">
         <label class="mb-1 block text-xs font-medium text-zinc-700 dark:text-zinc-300">Send via SMS</label>
         <div class="flex items-center gap-2">
@@ -175,16 +225,18 @@ async function sendSms() {
             bind:value={phone}
             class="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-[color:var(--brand)] dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
           />
-<button
-  type="button"
-  class="shrink-0 rounded-md border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-700 transition hover:bg-zinc-50 focus:outline-none focus:ring-2 focus:ring-[color:var(--brand)]/40 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-60"
-  on:click={sendSms}
-  disabled={sending || !normalizePhone(phone)}
->
-  {sending ? 'Sending…' : 'Send'}
-</button>
-
+          <button
+            type="button"
+            class="shrink-0 rounded-md border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-700 transition hover:bg-zinc-50 focus:outline-none focus:ring-2 focus:ring-[color:var(--brand)]/40 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-60"
+            on:click={sendSms}
+            disabled={sending || !normalizePhone(phone)}
+          >
+            {sending ? "Sending…" : "Send"}
+          </button>
         </div>
+        {#if smsError}
+          <p class="mt-1 text-xs text-red-600 dark:text-red-400">{smsError}</p>
+        {/if}
         <p class="mt-1 text-[11px] text-zinc-500 dark:text-zinc-400">
           This opens your device’s Messages app with the link prefilled.
         </p>
@@ -199,6 +251,13 @@ async function sendSms() {
           Close
         </button>
       </div>
+    </div>
+  {/if}
+
+  <!-- Tiny toast -->
+  {#if toast}
+    <div class="pointer-events-none fixed bottom-4 right-4 z-[60] rounded-md bg-zinc-900/90 px-3 py-2 text-xs text-white shadow-lg">
+      {toast}
     </div>
   {/if}
 </div>
