@@ -1,6 +1,7 @@
 <script lang="ts">
   import GameBoard from "$lib/components/GameBoard.svelte";
   import ThemePicker from "$lib/components/ThemePicker.svelte";
+  import PuzzleThemeProvider from "$lib/themes/PuzzleThemeProvider.svelte";
   import { browser } from "$app/environment";
   import { createEventDispatcher, onMount } from "svelte";
   import type { ThemeKey } from "$lib/themes/themes";
@@ -195,7 +196,7 @@
 
       <!-- Theme selection -->
       <div class="rounded-2xl border border-zinc-200 bg-white/90 p-4 shadow-sm dark:bg-zinc-900/80 dark:border-zinc-800">
-        <ThemePicker bind:value={selectedTheme} showPreview={false} />
+        <ThemePicker bind:value={selectedTheme} showPreview={false} mode="puzzle" />
       </div>
 
       <!-- sliders -->
@@ -262,19 +263,21 @@
     <section class="space-y-3 xl:sticky xl:top-4 self-start">
       <h2 class="text-lg font-semibold text-zinc-900 dark:text-zinc-100">Live preview</h2>
       <div class="rounded-2xl border border-zinc-200 bg-white/90 p-4 shadow-sm dark:bg-zinc-900/80 dark:border-zinc-800">
-        <GameBoard
-          puzzle={{
-            id: "live",
-            title: title || "Untitled",
-            words: categories.flatMap((c, ci) =>
-              c.words.map((w, wi) => ({ id: `${ci}-${wi}`, text: w || "", groupId: (["A","B","C","D","E","F","G","H"][ci] ?? "A") }))
-            )
-          } as any}
-          {puzzleId}
-          initialSeed={42}
-          celebrateOnComplete={true}
-          showControls={false}
-        />
+        <PuzzleThemeProvider themeKey={selectedTheme}>
+          <GameBoard
+            puzzle={{
+              id: "live",
+              title: title || "Untitled",
+              words: categories.flatMap((c, ci) =>
+                c.words.map((w, wi) => ({ id: `${ci}-${wi}`, text: w || "", groupId: (["A","B","C","D","E","F","G","H"][ci] ?? "A") }))
+              )
+            } as any}
+            {puzzleId}
+            initialSeed={42}
+            celebrateOnComplete={true}
+            showControls={false}
+          />
+        </PuzzleThemeProvider>
       </div>
     </section>
   </div>

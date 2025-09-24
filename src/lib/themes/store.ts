@@ -9,18 +9,18 @@ const LS_PER_PUZZLE = "connections:themeByPuzzle";
 
 // ----- base (global) theme -----
 function loadThemeKey(): ThemeKey {
-  if (!browser) return "summer";
+  if (!browser) return "spring";
   try {
-    return (localStorage.getItem(LS_KEY) as ThemeKey) || "summer";
+    return (localStorage.getItem(LS_KEY) as ThemeKey) || "spring";
   } catch {
-    return "summer";
+    return "spring";
   }
 }
 export const themeKey = writable<ThemeKey>(loadThemeKey());
 export const theme = writable<Theme>(THEMES[loadThemeKey()]);
 
 themeKey.subscribe((k) => {
-  theme.set(THEMES[k] ?? THEMES.summer);
+  theme.set(THEMES[k] ?? THEMES.spring);
   if (browser) {
     try { localStorage.setItem(LS_KEY, k); } catch {}
   }

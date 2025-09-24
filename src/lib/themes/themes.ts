@@ -177,7 +177,7 @@ export const THEMES: Record<ThemeKey, Theme> = {
 
 // handy exports
 export const THEME_KEYS = Object.keys(THEMES) as ThemeKey[];
-export const DEFAULT_THEME: Theme = THEMES.summer;
+export const DEFAULT_THEME: Theme = THEMES.spring;
 
 export function getTheme(key?: ThemeKey): Theme {
   return (key && THEMES[key]) || DEFAULT_THEME;

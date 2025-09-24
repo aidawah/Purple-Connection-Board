@@ -2,6 +2,7 @@
 	import PuzzleEditor from '$lib/components/PuzzleEditor.svelte';
 	import { page } from '$app/stores';
 	import { onMount } from 'svelte';
+	import type { ThemeKey } from '$lib/themes/themes';
 
 	let id = '';
 	const unsub = page.subscribe((p) => (id = p.params.id || ''));
@@ -9,7 +10,8 @@
 	let initial = {
 		title: '',
 		size: '4x4',
-		categories: [] as Array<{ title: string; words: string[] }>
+		categories: [] as Array<{ title: string; words: string[] }>,
+		theme: undefined as ThemeKey | undefined
 	};
 	let loading = true;
 	let busy = false;
@@ -35,7 +37,8 @@
 				categories: (x.categories ?? []).map((c: any) => ({
 					title: c?.title ?? '',
 					words: Array.isArray(c?.words) ? c.words : []
-				}))
+				})),
+				theme: x.theme
 			};
 		} catch (e) {
 			console.error(e);
@@ -47,7 +50,7 @@
 	});
 
 	// save updates
-	async function handleSubmit(e: CustomEvent<{ title: string; size: string; categories: any[] }>) {
+	async function handleSubmit(e: CustomEvent<{ title: string; size: string; categories: any[]; theme?: string }>) {
 		try {
 			busy = true;
 			const fb = await import('$lib/firebase');
@@ -61,6 +64,7 @@
 					title: e.detail.title,
 					size: e.detail.size,
 					categories: e.detail.categories,
+					theme: e.detail.theme,
 					updatedAt: serverTimestamp()
 				},
 				{ merge: true }

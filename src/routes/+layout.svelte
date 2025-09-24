@@ -6,6 +6,7 @@
 	import '../app.css';
 	import Navbar from '$lib/components/Navbar.svelte';
 	import Footer from '$lib/components/Footer.svelte';
+	import ThemeProvider from '$lib/themes/ThemeProvider.svelte';
 	import favicon from '$lib/assets/favicon.png';
 
 	onMount(() => {
@@ -33,14 +34,12 @@
 	<link rel="icon" href={favicon} />
 </svelte:head>
 
-<ThemeProvider>
-	<div class="pb-16 md:pb-0">
-		{#if $page.url.pathname !== '/signinPage'}
-			<Navbar />
-		{/if}
+<div class="pb-16 md:pb-0">
+	{#if $page.url.pathname !== '/signinPage'}
+		<Navbar />
+	{/if}
 
-		<slot />
+	<slot />
 
-		<Footer />
-	</div>
-</ThemeProvider>
+	<Footer />
+</div>

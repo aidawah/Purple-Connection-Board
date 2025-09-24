@@ -243,6 +243,7 @@ export async function fetchPuzzle(id: string) {
 		id: snap.id,
 		title: x?.title ?? 'Untitled',
 		description: x?.description ?? '',
+		theme: x?.theme,
 		words
 	};
 }

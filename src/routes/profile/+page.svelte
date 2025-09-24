@@ -34,6 +34,7 @@
 		// NEW (optional)
 		isPublished?: boolean;
 		status?: 'draft' | 'published';
+		theme?: string;
 	};
 
 	// ---- state ----
@@ -197,22 +198,23 @@
 					const norm = (s: any) =>
 						s ? String(s)[0].toUpperCase() + String(s).slice(1).toLowerCase() : 'Medium';
 
-					return {
-						id: d.id,
-						title: x.title ?? 'Untitled',
-						description: x.description ?? '',
-						category: x.category ?? 'General',
-						difficulty: norm(x.difficulty ?? 'Medium') as 'Easy' | 'Medium' | 'Hard',
-						imageUrl: x.imageUrl ?? '',
-						isPinned: !!x.isPinned,
-						solveCount: x.solveCount ?? 0,
-						createdAt:
-							x.createdAt?.toDate?.()?.toISOString?.() ??
-							x.publishedAt?.toDate?.()?.toISOString?.() ??
-							new Date().toISOString(), // ⬅️ comma was missing here
-						isPublished: !!x.isPublished,
-						status: (x.status ?? (x.isPublished ? 'published' : 'draft')) as 'draft' | 'published'
-					};
+				return {
+					id: d.id,
+					title: x.title ?? 'Untitled',
+					description: x.description ?? '',
+					category: x.category ?? 'General',
+					difficulty: norm(x.difficulty ?? 'Medium') as 'Easy' | 'Medium' | 'Hard',
+					imageUrl: x.imageUrl ?? '',
+					isPinned: !!x.isPinned,
+					solveCount: x.solveCount ?? 0,
+					createdAt:
+						x.createdAt?.toDate?.()?.toISOString?.() ??
+						x.publishedAt?.toDate?.()?.toISOString?.() ??
+						new Date().toISOString(), // ⬅️ comma was missing here
+					isPublished: !!x.isPublished,
+					status: (x.status ?? (x.isPublished ? 'published' : 'draft')) as 'draft' | 'published',
+					theme: x.theme ?? undefined
+				};
 				};
 
 				const seen: Record<string, MyPuzzle> = {};

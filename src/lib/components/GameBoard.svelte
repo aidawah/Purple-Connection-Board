@@ -1,14 +1,13 @@
 <script lang="ts">
   import { onMount, tick, createEventDispatcher } from "svelte";
   import type { Puzzle as DataPuzzle } from "$lib/data/puzzles";
-  import type { Puzzle } from "$lib/types";
   import { shuffled } from "$lib/gameLogic";
   import PuzzleCard from "$lib/components/PuzzleCard.svelte";
   import CompletionRing from "$lib/effects/CompletionRing.svelte";
   import { initRunPersistence, type RunState } from "$lib/useRunPersistence";
 
   export let puzzleId: string | number | null = null;
-  export let puzzle: Puzzle | null = null;
+  export let puzzle: EnginePuzzle | DataPuzzle | null = null;
   export let initialSeed: number = 42;
 
   export let resumeState:
@@ -233,7 +232,7 @@
       }
 
       await tick();
-      dispatch("loaded", { puzzleId: (puzzle?.id ?? puzzleId ?? "live") as any, title: puzzle?.title ?? "Untitled" });
+      dispatch("loaded", { puzzleId: (puzzle?.id ?? puzzleId ?? "live") as string | number, title: puzzle?.title ?? "Untitled" });
       emitNow();
     } catch (e: any) {
       err = e?.message ?? "Failed to load";
@@ -310,7 +309,14 @@
   let gridWrap: HTMLDivElement | null = null;
 </script>
 
-<div class="w-full flex flex-col items-center gap-4">
+<div class="w-full flex flex-col items-center gap-4 min-h-screen"
+     style="
+       background: var(--puzzle-bg, #fef9c3);
+       background-image: var(--puzzle-bg-image, none);
+       background-size: cover;
+       background-position: center;
+       background-repeat: no-repeat;
+     ">
   {#if showBrandEffective}
     <img src={brandSrc!} alt="brand" class="h-8 opacity-80 mt-2" />
   {/if}
