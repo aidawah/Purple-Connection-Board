@@ -3,27 +3,31 @@
   import { assets } from "$app/paths";
 
   /** Public API */
-  export let visible: boolean | number = false;              // boolean or incrementing number
-  export let spotImage: string = "HealthSpaces_Icon6_circle.png"; // /static filename
-  export let anchor: HTMLElement | null = null;              // optional grid wrapper for precise alignment
+  export let visible: boolean | number = false;                      // boolean or incrementing number
+  export let spotImage: string = "HealthSpaces_Icon6_circle.png";    // /static filename
+  export let anchor: HTMLElement | null = null;                      // optional grid wrapper for precise alignment
 
-  // Motion / layout
-  export let pad = 28;                   // ring sits this many px outside the grid bounds
+  /** Ring shape (NEW) */
+  export let ringShape: "ellipse" | "circle" = "circle";             // force perfect circle by default
+  export let circleRadiusMode: "fit" | "cover" = "cover";            // 'cover' surrounds the rect; 'fit' inscribes it
+
+  /** Motion / layout */
+  export let pad = -64;                   // ring sits this many px outside the grid bounds
   export let patternScale = 3.0;         // particle density multiplier
-  export let slowFactor = 0.9;           // lower = slower outward travel
+  export let slowFactor = 0.4;           // lower = slower outward travel (you set this)
   export let durationMin = 0.72;         // per-sprite min duration (seconds)
   export let durationMax = 2.36;         // per-sprite max duration (seconds)
 
-  // Visuals
+  /** Visuals */
   export let sizeMin = 26;               // sprite min size (px)
   export let sizeMax = 42;               // sprite max size (px)
   export let zIndex = 2147483647;        // draw above everything
   export let debug = false;              // outline the anchor rect & crosshair
 
-  // Life
-  export let autoHideMs = 3600;          // total life of burst (ms)
+  /** Lifetime */
+  export let autoHideMs = 7200;          // total life of burst (ms) — you set this long
 
-  // Resolve static asset robustly (handles base path + strips directories)
+  /** Resolve static asset robustly (handles base path + strips directories) */
   $: resolvedSrc = `${assets}/${(spotImage || "").split(/[/\\]/).pop() || "HealthSpaces_Icon6_circle.png"}`;
 
   // Canvas overlay (fixed, full viewport)
@@ -71,8 +75,20 @@
 
     const cx = r.left + r.width / 2;
     const cy = r.top  + r.height / 2;
-    const rx = r.width  / 2 + pad;
-    const ry = r.height / 2 + pad;
+
+    // ellipse radii by default
+    let rx = r.width  / 2 + pad;
+    let ry = r.height / 2 + pad;
+
+    // perfect circle option
+    if (ringShape === "circle") {
+      const base = circleRadiusMode === "cover"
+        ? Math.max(r.width, r.height) / 2
+        : Math.min(r.width, r.height) / 2;
+      const circ = base + pad;
+      rx = circ;
+      ry = circ;
+    }
 
     return { rect: r, vw, vh, cx, cy, rx, ry };
   }
@@ -83,13 +99,13 @@
 
     const { rect, vw, vh, cx, cy, rx, ry } = m;
     const perimeter = 2 * (rect.width + rect.height);
-    const count = clamp(Math.round((perimeter / 26) * patternScale), 60, 280);
+    const count = clamp(Math.round((perimeter / 26) * patternScale), 60, 360); // slightly higher ceiling for circle density
 
     const arr: Spot[] = [];
     for (let i = 0; i < count; i++) {
       const t = (i / count) * Math.PI * 2 + rnd(-0.10, 0.10);
 
-      // Start on ellipse around the grid
+      // Start on ellipse/circle around the grid
       const sx = cx + rx * Math.cos(t);
       const sy = cy + ry * Math.sin(t);
 
@@ -109,7 +125,7 @@
         dist: travel,
         size: rndi(sizeMin, sizeMax),
         delay: rnd(0.0, 0.18),
-        dur: rnd(durationMin, durationMax),
+        dur: rnd(durationMin, Math.max(durationMin, durationMax)),
         rot0: rnd(0, Math.PI * 2),
         rps: rnd(0.35, 0.75)
       });
@@ -118,11 +134,11 @@
     if (debug) console.log("[CompletionRing] spots", spots.length);
   }
 
+  // ease + alpha
   function easeOutCubic(u: number) {
     const t = clamp(u, 0, 1);
     return 1 - Math.pow(1 - t, 3);
   }
-
   function alphaCurve(u: number) {
     // Fade in 0..0.12, hold 0.12..0.75, fade out 0.75..1
     if (u <= 0) return 0;
@@ -134,6 +150,11 @@
 
   function draw(nowMs: number) {
     if (!canvas || !ctx) return;
+    if (!imgLoaded) { // don't render placeholders—prevents any UI tint
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      return;
+    }
+
     const dpr = window.devicePixelRatio || 1;
     const W = window.innerWidth;
     const H = window.innerHeight;
@@ -180,10 +201,7 @@
       const w = s.size, h = s.size;
 
       // ✅ Only draw your PNG (NO colored fallback to avoid tinting the UI)
-      if (imgLoaded && img) {
-        ctx.drawImage(img, -w / 2, -h / 2, w, h);
-      }
-      // else: draw nothing until image loads
+      ctx.drawImage(img!, -w / 2, -h / 2, w, h);
 
       ctx.restore();
     }
@@ -218,9 +236,14 @@
   }
 
   function start() {
+    if (playing) return; // prevent overlapping runs
     if (!canvas) return;
     if (!ctx) ctx = canvas.getContext("2d");
     if (!ctx) return;
+
+    // Respect reduced motion if desired
+    const reduced = window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
+    if (reduced) { return; }
 
     buildSpots();
     tStart = performance.now();
