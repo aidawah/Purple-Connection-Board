@@ -1,7 +1,9 @@
 <script lang="ts">
-  import { onMount, tick } from 'svelte';
+  import { onMount, tick, onDestroy } from 'svelte';
   import GameBoard from '$lib/components/GameBoard.svelte';
   import HintButton from '$lib/components/HintButton.svelte';
+  import { setThemeByKey, themeKey } from '$lib/themes/store';
+  import { get } from 'svelte/store';
 
   export let data: { id: string; puzzle: any };
 
@@ -9,9 +11,27 @@
   const isDemo = data.id === 'example';
   const BRAND = '#14b8a6';
   const CURSOR_SRC = '/demo-cursor.png'; // make sure this exists in /static
+  
+  // Store original theme to restore when leaving
+  let originalTheme: string | null = null;
 
   onMount(() => {
     document.documentElement.style.setProperty('--brand', BRAND);
+    
+    // Store the original theme before applying puzzle theme
+    originalTheme = get(themeKey);
+    
+    // Apply puzzle theme if it exists
+    if (data.puzzle?.theme) {
+      setThemeByKey(data.puzzle.theme as any);
+    }
+  });
+  
+  // Restore original theme when leaving the page
+  onDestroy(() => {
+    if (originalTheme !== null) {
+      setThemeByKey(originalTheme);
+    }
   });
 
   // Keep last state emitted by GameBoard so HintButton knows progress

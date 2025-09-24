@@ -14,6 +14,7 @@ type EnginePuzzle = {
   words: EngineWord[];
   categories: Array<{ title: string; words: string[] }>;
   description?: string;
+  theme?: string;
 };
 
 // Demo fallback (unchanged)
@@ -127,7 +128,8 @@ export const load: PageLoad = async ({ params }) => {
     title: String(raw?.title ?? 'Untitled'),
     words,
     categories,
-    description: typeof raw?.description === 'string' ? raw.description : undefined
+    description: typeof raw?.description === 'string' ? raw.description : undefined,
+    theme: typeof raw?.theme === 'string' ? raw?.theme : undefined
   };
 
   // Guard: if no words, this is unusable

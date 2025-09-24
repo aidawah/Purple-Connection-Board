@@ -1,7 +1,7 @@
 <!-- src/lib/components/ThemePicker.svelte -->
 <script lang="ts">
-  import { THEMES, type ThemeKey } from "$lib/theme/themes";
-  import { themeKey, setThemeByKey } from "$lib/theme/store";
+  import { THEMES, type ThemeKey } from "$lib/themes/themes";
+  import { themeKey, setThemeByKey } from "$lib/themes/store";
   import { get } from "svelte/store";
 
   export let value: ThemeKey = get(themeKey);

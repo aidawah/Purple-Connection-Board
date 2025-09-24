@@ -33,12 +33,14 @@
 	<link rel="icon" href={favicon} />
 </svelte:head>
 
-<div class="pb-16 md:pb-0">
-	{#if $page.url.pathname !== '/signinPage'}
-		<Navbar />
-	{/if}
+<ThemeProvider>
+	<div class="pb-16 md:pb-0">
+		{#if $page.url.pathname !== '/signinPage'}
+			<Navbar />
+		{/if}
 
-	<slot />
+		<slot />
 
-	<Footer />
-</div>
+		<Footer />
+	</div>
+</ThemeProvider>

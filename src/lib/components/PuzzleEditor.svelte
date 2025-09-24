@@ -1,13 +1,16 @@
 <script lang="ts">
   import GameBoard from "$lib/components/GameBoard.svelte";
+  import ThemePicker from "$lib/components/ThemePicker.svelte";
   import { browser } from "$app/environment";
   import { createEventDispatcher, onMount } from "svelte";
+  import type { ThemeKey } from "$lib/themes/themes";
 
   // Props
   export let initial: {
     title?: string;
     size?: string; // like "4x4"
     categories?: Array<{ title: string; words: string[] }>;
+    theme?: ThemeKey;
   } = {};
   export let draftKey: string | null = "pcg:create:draft"; // pass null to disable drafts
   export let submitLabel = "Save & Play";
@@ -23,6 +26,7 @@
   // --- state
   let puzzleId = "";
   let title = initial.title ?? "";
+  let selectedTheme: ThemeKey | undefined = initial.theme;
   let categoryCount = Math.max(MIN, Math.min(MAX, initial.categories?.length ?? (parseInt(initial.size?.split("x")?.[0] || "4") || 4)));
   let wordCount = Math.max(MIN, Math.min(MAX, initial.categories?.[0]?.words?.length ?? (parseInt(initial.size?.split("x")?.[1] || "4") || 4)));
   type Cat = { name: string; words: string[] };
@@ -65,6 +69,7 @@
         try {
           const d = JSON.parse(raw);
           title = d.title ?? title;
+          selectedTheme = d.selectedTheme ?? selectedTheme;
           categoryCount = clamp(d.categoryCount ?? categoryCount);
           wordCount = clamp(d.wordCount ?? wordCount);
           categories = Array.isArray(d.categories) ? d.categories : categories;
@@ -79,7 +84,7 @@
 
   // persist draft
   $: if (browser && draftKey) {
-    ls.set(draftKey, JSON.stringify({ title, categoryCount, wordCount, categories }));
+    ls.set(draftKey, JSON.stringify({ title, categoryCount, wordCount, categories, selectedTheme }));
   }
 
   // --- generation helpers
@@ -168,7 +173,8 @@
     const payload = {
       title: title.trim(),
       size: `${categoryCount}x${wordCount}`,
-      categories: categories.map((c) => ({ title: c.name.trim(), words: c.words.map((w) => w.trim()) }))
+      categories: categories.map((c) => ({ title: c.name.trim(), words: c.words.map((w) => w.trim()) })),
+      theme: selectedTheme
     };
     dispatch("submit", payload);
   }
@@ -185,6 +191,11 @@
       <div class="rounded-2xl border border-zinc-200 bg-white/90 p-4 shadow-sm dark:bg-zinc-900/80 dark:border-zinc-800">
         <label class="text-sm font-medium text-zinc-700 dark:text-zinc-200" for="title">Puzzle title</label>
         <input id="title" class="h-11 w-full rounded-lg border border-zinc-300 bg-white px-3 text-zinc-900 outline-none focus:ring-2 focus:ring-[color:var(--brand)] dark:bg-zinc-900 dark:text-zinc-100 dark:border-zinc-700 mt-2" bind:value={title} placeholder="e.g. Hospital Departments" />
+      </div>
+
+      <!-- Theme selection -->
+      <div class="rounded-2xl border border-zinc-200 bg-white/90 p-4 shadow-sm dark:bg-zinc-900/80 dark:border-zinc-800">
+        <ThemePicker bind:value={selectedTheme} showPreview={false} />
       </div>
 
       <!-- sliders -->
