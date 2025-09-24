@@ -309,10 +309,10 @@
   let gridWrap: HTMLDivElement | null = null;
 </script>
 
-<div class="w-full flex flex-col items-center gap-4 min-h-screen"
+<div class="w-full flex flex-col items-center gap-4 p-8 aspect-square"
      style="
-       background: var(--puzzle-bg, #fef9c3);
-       background-image: var(--puzzle-bg-image, none);
+       background: var(--puzzle-bg);
+       background-image: var(--puzzle-bg-image);
        background-size: cover;
        background-position: center;
        background-repeat: no-repeat;
