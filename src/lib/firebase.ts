@@ -3,6 +3,7 @@
 // Core Firebase bootstrap for the client SDK.
 import { initializeApp } from "firebase/app";
 
+
 // Firestore (database) APIs we use throughout the app.
 // Note: we import both functions and TS helper types.
 import {
@@ -59,6 +60,30 @@ const firebaseConfig = {
 // Fail fast during startup if the config is missing a key field.
 // This helps catch env/hosting misconfiguration early.
 if (!firebaseConfig.apiKey) throw new Error("Missing PUBLIC_FIREBASE_API_KEY");
+
+
+// Supports either { categories: [{ words: [] }...] } or { wordsFlat: [] } shapes.
+export async function fetchPuzzlePreview(id: string): Promise<{ words: string[] }> {
+  const snap = await getDoc(ref.puzzle(id));
+  if (!snap.exists()) return { words: [] };
+
+  const x: any = snap.data() || {};
+
+  // Preferred: categories[0..3].words[0..3]
+  let words: string[] = Array.isArray(x?.categories)
+    ? x.categories
+        .slice(0, 4)
+        .flatMap((c: any) => (Array.isArray(c?.words) ? c.words.slice(0, 4) : []))
+    : [];
+
+  // Fallback: wordsFlat[0..15]
+  if (!words.length && Array.isArray(x?.wordsFlat)) {
+    words = x.wordsFlat.slice(0, 16);
+  }
+
+  // Final guard
+  return { words: (words || []).map(String).slice(0, 16) };
+}
 
 // Initialize core SDK singletons. These should be created exactly once.
 export const app = initializeApp(firebaseConfig);
@@ -424,6 +449,8 @@ export async function fetchPublishedPuzzlesPage(
         })
         .slice(0, pageSize);
       return { items: sorted, lastDoc: undefined, hasMore: false };
+
+      
     }
   }
 }
