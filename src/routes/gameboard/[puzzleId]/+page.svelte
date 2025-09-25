@@ -240,16 +240,7 @@
     </div>
   </div>
 
-  <!-- Debug theme loading -->
-  {#if data.puzzle?.theme}
-    <div class="mb-4 p-2 bg-yellow-100 border border-yellow-400 rounded text-sm">
-      Debug: Loaded theme = "{data.puzzle.theme}" (type: {typeof data.puzzle.theme})
-    </div>
-  {:else}
-    <div class="mb-4 p-2 bg-red-100 border border-red-400 rounded text-sm">
-      Debug: No theme found, will use fallback
-    </div>
-  {/if}
+  
 
   <PuzzleThemeProvider themeKey={data.puzzle?.theme}>
     <GameBoard
