@@ -2,6 +2,7 @@
   import { onMount, onDestroy } from 'svelte';
   import { browser } from '$app/environment';
   import { goto } from '$app/navigation';
+  import { page } from '$app/stores';
   import Share from "$lib/components/Share.svelte";
 
 	// ---- theme + data toggles ----
@@ -44,6 +45,14 @@
 
 	// tab order: overview → mypuzzles → activity → settings
 	let tab: 'overview' | 'mypuzzles' | 'activity' | 'settings' = 'overview';
+
+	// Read tab from URL parameter
+	$: {
+		const urlTab = $page.url.searchParams.get('tab');
+		if (urlTab && ['overview', 'mypuzzles', 'activity', 'settings'].includes(urlTab)) {
+			tab = urlTab as 'overview' | 'mypuzzles' | 'activity' | 'settings';
+		}
+	}
 
 	// Start with empty/neutral values; Firebase will hydrate everything.
 	let profile: Profile = {
@@ -147,25 +156,54 @@
 
 			// --- activity (recent first)
 			try {
-				const actQ = ffs.query(
-					ffs.collection(db, 'activity'),
-					ffs.where('uid', '==', currentUID),
-					ffs.orderBy('createdAt', 'desc'),
-					ffs.limit(15)
-				);
+				console.log('🔍 Loading activities for user:', currentUID);
+				
+		// Use simpler query without orderBy to avoid composite index requirement
+		// Check if activities use actor.uid instead of top-level uid
+		const actQ = ffs.query(
+			ffs.collection(db, 'activity'),
+			ffs.where('actor.uid', '==', currentUID)
+		);
 				const actSnap = await ffs.getDocs(actQ);
-				recentActivity = actSnap.docs.map((doc: any) => {
+				console.log('📊 Activity query result:', actSnap.docs.length, 'documents found');
+				
+				if (actSnap.docs.length === 0) {
+					console.log('⚠️ No activity documents found. Checking if any activities exist in the collection...');
+					// Try a broader query to see if any activities exist at all
+					const allActQ = ffs.query(ffs.collection(db, 'activity'), ffs.limit(5));
+					const allActSnap = await ffs.getDocs(allActQ);
+					console.log('📊 Total activities in collection:', allActSnap.docs.length);
+					allActSnap.docs.forEach((doc: any) => {
+						console.log('Activity doc:', doc.id, doc.data());
+					});
+				}
+				
+				// Process and sort activities on client side
+				const activitiesWithTimestamp = actSnap.docs.map((doc: any) => {
 					const x = doc.data();
-					const when = x?.createdAt?.toDate?.()?.toLocaleString?.() ?? 'recently';
+					console.log('📋 Activity document:', doc.id, x);
+					const createdAt = x?.createdAt?.toDate?.() || new Date();
+					const when = createdAt.toLocaleString();
 					const txt =
 						x?.type === 'puzzle_solved'
-							? `Solved “${x?.puzzleTitle ?? 'Untitled'}” ✅`
+							? `Solved "${x?.puzzleTitle ?? 'Untitled'}" ✅`
 							: x?.type === 'puzzle_created'
-								? `Created “${x?.puzzleTitle ?? 'Untitled'}” 🧩`
-								: (x?.text ?? 'Did something');
-					return { at: when, text: txt };
+								? `Created "${x?.puzzleTitle ?? 'Untitled'}" 🧩`
+								: x?.type === 'puzzle_published'
+									? `Published "${x?.puzzleTitle ?? 'Untitled'}" 📝`
+									: (x?.text ?? 'Did something');
+					return { at: when, text: txt, timestamp: createdAt };
 				});
-			} catch {
+				
+				// Sort by timestamp descending and limit to 15 most recent
+				recentActivity = activitiesWithTimestamp
+					.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime())
+					.slice(0, 15)
+					.map(({at, text}) => ({at, text}));
+					
+				console.log('✅ Processed activities:', recentActivity);
+			} catch (activityError) {
+				console.error('❌ Error loading activities:', activityError);
 				recentActivity = [];
 			}
 

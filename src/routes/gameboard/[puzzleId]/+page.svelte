@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount, tick, onDestroy } from 'svelte';
+  import { browser } from '$app/environment';
   import GameBoard from '$lib/components/GameBoard.svelte';
   import HintButton from '$lib/components/HintButton.svelte';
   import PuzzleThemeProvider from '$lib/themes/PuzzleThemeProvider.svelte';
@@ -16,8 +17,23 @@
   const BRAND = '#14b8a6';
   const CURSOR_SRC = '/demo-cursor.png'; // make sure this exists in /static
 
-  onMount(() => {
+  // Firebase imports (lazy loaded)
+  let fb: any = null;
+  let ffs: any = null;
+  let auth: any = null;
+  let db: any = null;
+
+  async function ensureFirebase() {
+    if (!browser) return;
+    if (!fb) fb = await import('$lib/firebase').catch(() => null);
+    if (!ffs) ffs = await import('firebase/firestore').catch(() => null);
+    if (!auth) auth = await import('firebase/auth').catch(() => null);
+    db = fb?.db ?? fb?.getFirestore?.(fb?.app) ?? null;
+  }
+
+  onMount(async () => {
     document.documentElement.style.setProperty('--brand', BRAND);
+    await ensureFirebase();
   });
 
   // Keep last state emitted by GameBoard so HintButton knows progress
@@ -30,6 +46,84 @@
   }>) {
     boardSolvedByGroup = e.detail.solvedByGroup;
     boardSelectedWords = e.detail.selectedWords;
+  }
+
+  // Handle puzzle completion - create activity record and update user stats
+  async function onPuzzleComplete() {
+    if (!db || !ffs || isDemo) return; // Skip for demo puzzles
+
+    console.log('🎉 Puzzle completed! Creating activity record...');
+
+    try {
+      const _auth = fb?.auth || auth?.getAuth?.();
+      const user = _auth?.currentUser;
+      
+      if (!user?.uid) {
+        console.warn('No user logged in, skipping activity creation');
+        return; 
+      }
+
+      const currentUID = user.uid;
+      const puzzleTitle = data.puzzle?.title || 'Untitled';
+
+      console.log('Creating activity for user:', currentUID, 'puzzle:', puzzleTitle);
+
+      // Create activity record
+      try {
+        const activityRef = ffs.doc(ffs.collection(db, 'activity'));
+        const activityData = {
+          type: 'puzzle_solved',
+          uid: currentUID,
+          actor: {
+            uid: currentUID,
+            displayName: user.displayName || 'Anonymous',
+            photoURL: user.photoURL || ''
+          },
+          puzzleId: data.id,
+          puzzleTitle: puzzleTitle,
+          visibility: data.puzzle?.visibility || 'public',
+          createdAt: ffs.serverTimestamp()
+        };
+        
+        console.log('Activity data to save:', activityData);
+        
+        await ffs.setDoc(activityRef, activityData);
+        console.log('✅ Activity record created successfully!');
+      } catch (activityError) {
+        console.error('❌ Failed to create activity record:', activityError);
+      }
+
+      // Update user stats - increment puzzlesCompleted
+      try {
+        const userRef = ffs.doc(db, 'users', currentUID);
+        await ffs.setDoc(userRef, {
+          stats: {
+            puzzlesCompleted: ffs.increment(1)
+          },
+          updatedAt: ffs.serverTimestamp()
+        }, { merge: true });
+      } catch (statsError) {
+        console.error('Failed to update user stats:', statsError);
+      }
+
+      // Update puzzle stats - increment completions
+      try {
+        if (data.id !== 'example') { // Don't update stats for demo puzzle
+          const puzzleRef = ffs.doc(db, 'puzzles', data.id);
+          await ffs.setDoc(puzzleRef, {
+            stats: {
+              completions: ffs.increment(1)
+            },
+            updatedAt: ffs.serverTimestamp()
+          }, { merge: true });
+        }
+      } catch (puzzleStatsError) {
+        console.error('Failed to update puzzle stats:', puzzleStatsError);
+      }
+
+    } catch (error) {
+      console.error('Error handling puzzle completion:', error);
+    }
   }
 
   // ----- Demo cursor + auto-solve (runs only when isDemo) -----
@@ -164,6 +258,7 @@
       showControls
       DEBUG={false}
       on:state={onBoardState}
+      on:complete={onPuzzleComplete}
     />
   </PuzzleThemeProvider>
 
