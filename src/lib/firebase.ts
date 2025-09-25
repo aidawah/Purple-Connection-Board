@@ -25,6 +25,8 @@ import {
   type DocumentData,
 } from "firebase/firestore";
 
+
+
 // Firebase Authentication: sign-in providers & session handling.
 import {
   getAuth,                         // Create an Auth instance bound to our app
@@ -89,6 +91,22 @@ export async function fetchPuzzlePreview(id: string): Promise<{ words: string[] 
 export const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app);
 export const auth = getAuth(app);
+
+
+
+//Domain admins settings
+export async function getDomainAdminClaim(forceRefresh = false): Promise<boolean> {
+  try {
+    const u = auth.currentUser;
+    if (!u) return false;
+    if (forceRefresh) await u.getIdToken(true);
+    const token = await u.getIdTokenResult();
+    return token.claims?.domainAdmin === true;
+  } catch {
+    return false;
+  }
+}
+
 
 // Handy constant for logging or feature flags by project.
 export const PROJECT_ID = firebaseConfig.projectId;
