@@ -1,5 +1,7 @@
 <script lang="ts">
-	import { createEventDispatcher } from 'svelte';
+	import { createEventDispatcher, getContext } from 'svelte';
+	import type { Readable } from 'svelte/store';
+	import type { Theme } from '$lib/themes/themes';
 
 	export let text: string;
 	export let wordId: string;
@@ -12,9 +14,12 @@
 		if (!locked) dispatch('toggle', { wordId });
 	}
 
-	// teal glow when selected (kept as-is)
+	// Try to get puzzle theme from context, fallback to no special styling
+	const puzzleTheme = getContext<Readable<Theme> | undefined>('puzzleTheme');
+	
+	// Use CSS custom properties instead of hardcoded colors
 	$: selectedGlow = selected
-		? 'ring-2 ring-[rgba(20,184,166,.65)] shadow-[0_10px_30px_rgba(20,184,166,.18)] border-[rgba(20,184,166,.65)]'
+		? 'ring-2 shadow-lg'
 		: '';
 </script>
 
@@ -27,13 +32,17 @@
 		on:keydown={(e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), toggle())}
 		aria-pressed={selected}
 		aria-label={locked ? `${label} (solved)` : `Word ${text}`}
-		class={`relative h-full w-full overflow-hidden rounded-2xl border
-            border-zinc-200 bg-white text-slate-900 shadow
-            transition-[box-shadow,border-color,background-color,color] duration-200 focus-visible:ring-2 focus-visible:ring-teal-400/60
-            focus-visible:outline-none dark:border-zinc-700 dark:bg-zinc-900
-            dark:text-zinc-100 dark:shadow-lg
+		class={`puzzle-card relative h-full w-full overflow-hidden rounded-2xl border
+            transition-[box-shadow,border-color,background-color,color] duration-200 focus-visible:ring-2 focus-visible:outline-none
             ${selectedGlow}`}
-		style="min-height:88px;"
+		style="
+			min-height:88px;
+			background: var(--puzzle-card, #fde68a);
+			color: var(--puzzle-text, #713f12);
+			border-color: var(--puzzle-border, #f59e0b);
+			--tw-ring-color: var(--puzzle-ring, rgba(251,191,36,0.65));
+			--tw-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+		"
 	>
 		<!-- FLIPPER: the ONLY element with transform -->
 		<div
@@ -53,16 +62,22 @@
 
 			<!-- BACK (visible when flipped) -->
 			<div
-				class="absolute inset-0 grid place-items-center rounded-2xl
-               border border-teal-500/50 bg-teal-500/15
-               dark:border-teal-400/40 dark:bg-teal-400/20"
-				style="backface-visibility:hidden; -webkit-backface-visibility:hidden; transform:rotateY(180deg);"
+				class="absolute inset-0 grid place-items-center rounded-2xl border"
+				style="
+					backface-visibility:hidden; 
+					-webkit-backface-visibility:hidden; 
+					transform:rotateY(180deg);
+					background: var(--puzzle-brand, #fbbf24);
+					border-color: var(--puzzle-border, #f59e0b);
+					color: var(--puzzle-bg, #fef9c3);
+				"
 			>
 				<div class="flex items-center gap-2">
-					<span class="h-2 w-2 rounded-full bg-teal-500 dark:bg-teal-400"></span>
-					<strong class="px-3 text-center text-teal-600 dark:text-teal-300"
-						>{label || 'Solved'}</strong
-					>
+					<span 
+						class="h-2 w-2 rounded-full" 
+						style="background: var(--puzzle-bg, #fef9c3);"
+					></span>
+					<strong class="px-3 text-center font-semibold">{label || 'Solved'}</strong>
 				</div>
 			</div>
 		</div>

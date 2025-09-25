@@ -1,18 +1,29 @@
 <!-- src/lib/components/ThemePicker.svelte -->
 <script lang="ts">
-  import { THEMES, type ThemeKey } from "$lib/theme/themes";
-  import { themeKey, setThemeByKey } from "$lib/theme/store";
+  import { THEMES, type ThemeKey } from "$lib/themes/themes";
+  import { themeKey, setThemeByKey } from "$lib/themes/store";
   import { get } from "svelte/store";
+  import { createEventDispatcher } from "svelte";
 
   export let value: ThemeKey = get(themeKey);
   export let label = "Theme";
   export let showPreview = true;
+  export let mode: 'global' | 'puzzle' = 'global'; // New prop to distinguish mode
+
+  const dispatch = createEventDispatcher<{
+    change: { themeKey: ThemeKey };
+  }>();
 
   function choose(k: ThemeKey) {
     value = k;
-    setThemeByKey(k);
-    const ev = new CustomEvent("change", { detail: { themeKey: k } });
-    dispatchEvent(ev);
+    
+    // Only update global theme store if in global mode
+    if (mode === 'global') {
+      setThemeByKey(k);
+    }
+    
+    // Always emit the change event
+    dispatch('change', { themeKey: k });
   }
 </script>
 

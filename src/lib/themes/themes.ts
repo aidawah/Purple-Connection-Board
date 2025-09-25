@@ -41,7 +41,7 @@ export const THEMES: Record<ThemeKey, Theme> = {
       ring: "rgba(251,191,36,0.65)",
       border: "#f59e0b",
     },
-    assets: { background: "/images/themes/summer-bg.svg" },
+    assets: { background: "/themes/summer-bg.svg" },
   },
   spring: {
     key: "spring",
@@ -54,7 +54,7 @@ export const THEMES: Record<ThemeKey, Theme> = {
       ring: "rgba(34,197,94,0.65)",
       border: "#10b981",
     },
-    assets: { background: "/images/themes/spring-bg.svg" },
+    assets: { background: "/themes/spring-bg.svg" },
   },
   fall: {
     key: "fall",
@@ -67,7 +67,7 @@ export const THEMES: Record<ThemeKey, Theme> = {
       ring: "rgba(217,119,6,0.65)",
       border: "#f59e0b",
     },
-    assets: { background: "/images/themes/fall-bg.svg" },
+    assets: { background: "/themes/fall-bg.svg" },
   },
   winter: {
     key: "winter",
@@ -80,7 +80,7 @@ export const THEMES: Record<ThemeKey, Theme> = {
       ring: "rgba(59,130,246,0.65)",
       border: "#2563eb",
     },
-    assets: { background: "/images/themes/winter-bg.svg" },
+    assets: { background: "/themes/winter-bg.svg" },
   },
   christmas: {
     key: "christmas",
@@ -93,7 +93,7 @@ export const THEMES: Record<ThemeKey, Theme> = {
       ring: "rgba(220,38,38,0.65)",
       border: "#15803d",
     },
-    assets: { background: "/images/themes/christmas-bg.svg" },
+    assets: { background: "/themes/christmas-bg.svg" },
   },
   thanksgiving: {
     key: "thanksgiving",
@@ -106,7 +106,7 @@ export const THEMES: Record<ThemeKey, Theme> = {
       ring: "rgba(146,64,14,0.65)",
       border: "#d97706",
     },
-    assets: { background: "/images/themes/thanksgiving-bg.svg" },
+    assets: { background: "/themes/thanksgiving-bg.svg" },
   },
   easter: {
     key: "easter",
@@ -119,7 +119,7 @@ export const THEMES: Record<ThemeKey, Theme> = {
       ring: "rgba(168,85,247,0.65)",
       border: "#9333ea",
     },
-    assets: { background: "/images/themes/easter-bg.svg" },
+    assets: { background: "/themes/easter-bg.svg" },
   },
   stpatricks: {
     key: "stpatricks",
@@ -132,7 +132,7 @@ export const THEMES: Record<ThemeKey, Theme> = {
       ring: "rgba(22,163,74,0.65)",
       border: "#15803d",
     },
-    assets: { background: "/images/themes/stpatricks-bg.svg" },
+    assets: { background: "/themes/stpatricks-bg.svg" },
   },
   halloween: {
     key: "halloween",
@@ -145,11 +145,11 @@ export const THEMES: Record<ThemeKey, Theme> = {
       ring: "rgba(249,115,22,0.65)",
       border: "#ea580c",
     },
-    assets: { background: "/images/themes/halloween-bg.svg" },
+    assets: { background: "/themes/halloween-bg.svg" },
   },
   valentines: {
     key: "valentines",
-    name: "Valentine’s Day",
+    name: "Valentine's Day",
     colors: {
       brand: "#e11d48",
       bg: "#fff1f2",
@@ -158,7 +158,7 @@ export const THEMES: Record<ThemeKey, Theme> = {
       ring: "rgba(225,29,72,0.65)",
       border: "#be123c",
     },
-    assets: { background: "/images/themes/valentines-bg.svg" },
+    assets: { background: "/themes/valentines-bg.svg" },
   },
   july4th: {
     key: "july4th",
@@ -171,13 +171,13 @@ export const THEMES: Record<ThemeKey, Theme> = {
       ring: "rgba(29,78,216,0.65)",
       border: "#dc2626",
     },
-    assets: { background: "/images/themes/july4th-bg.svg" },
+    assets: { background: "/themes/july4th-bg.svg" },
   },
 };
 
 // handy exports
 export const THEME_KEYS = Object.keys(THEMES) as ThemeKey[];
-export const DEFAULT_THEME: Theme = THEMES.summer;
+export const DEFAULT_THEME: Theme = THEMES.spring;
 
 export function getTheme(key?: ThemeKey): Theme {
   return (key && THEMES[key]) || DEFAULT_THEME;

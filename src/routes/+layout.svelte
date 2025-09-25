@@ -6,6 +6,7 @@
 	import '../app.css';
 	import Navbar from '$lib/components/Navbar.svelte';
 	import Footer from '$lib/components/Footer.svelte';
+	import ThemeProvider from '$lib/themes/ThemeProvider.svelte';
 	import favicon from '$lib/assets/favicon.png';
 
 	onMount(() => {

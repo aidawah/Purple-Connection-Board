@@ -1,9 +1,15 @@
 <script lang="ts">
-  import { onMount, tick } from 'svelte';
+  import { onMount, tick, onDestroy } from 'svelte';
   import GameBoard from '$lib/components/GameBoard.svelte';
   import HintButton from '$lib/components/HintButton.svelte';
+  import PuzzleThemeProvider from '$lib/themes/PuzzleThemeProvider.svelte';
 
   export let data: { id: string; puzzle: any };
+
+  // Debug theme changes
+  $: if (typeof console !== 'undefined') {
+    console.log('Data changed, theme is now:', data.puzzle?.theme);
+  }
 
   // Demo toggles + brand color
   const isDemo = data.id === 'example';
@@ -140,13 +146,26 @@
     </div>
   </div>
 
-  <GameBoard
-    puzzleId={data.id}
-    puzzle={data.puzzle}
-    showControls
-    DEBUG={false}
-    on:state={onBoardState}
-  />
+  <!-- Debug theme loading -->
+  {#if data.puzzle?.theme}
+    <div class="mb-4 p-2 bg-yellow-100 border border-yellow-400 rounded text-sm">
+      Debug: Loaded theme = "{data.puzzle.theme}" (type: {typeof data.puzzle.theme})
+    </div>
+  {:else}
+    <div class="mb-4 p-2 bg-red-100 border border-red-400 rounded text-sm">
+      Debug: No theme found, will use fallback
+    </div>
+  {/if}
+
+  <PuzzleThemeProvider themeKey={data.puzzle?.theme}>
+    <GameBoard
+      puzzleId={data.id}
+      puzzle={data.puzzle}
+      showControls
+      DEBUG={false}
+      on:state={onBoardState}
+    />
+  </PuzzleThemeProvider>
 
   {#if isDemo}
     <!-- Demo cursor overlay -->

@@ -8,6 +8,7 @@ import type {
 	SnapshotOptions,
 	Timestamp
 } from 'firebase/firestore';
+import type { ThemeKey } from '$lib/themes/themes';
 
 // Difficulty choices for a puzzle
 export type Difficulty = 'easy' | 'medium' | 'hard';
@@ -90,6 +91,7 @@ export interface PuzzleDoc {
 	difficulty: Difficulty; // "easy" | "medium" | "hard"
 	tags?: string[]; // optional labels for filtering/search
 	solutionHash?: string | null; // optional opaque hash of solution for validation
+	theme?: ThemeKey; // optional theme for the puzzle
 
 	createdBy: CreatedBy; // denormalized author info
 	visibility: Visibility; // who can see this puzzle
