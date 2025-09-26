@@ -19,8 +19,10 @@
 html,
 body,
 #svelte {
-	height: 100%;
+  min-height: 100%;
+  height: auto; /* allow the page to grow beyond the viewport */
 }
+
 
 /* Prevents the bottom nav from covering content on small screens. */
 @media (max-width: 767px) {
@@ -84,4 +86,9 @@ body,
 
 @utility will-change-transform {
 	will-change: transform;
+}
+
+/* Allow theme background image (from PuzzleThemeProvider) to be visible */
+body {
+  background: transparent;
 }

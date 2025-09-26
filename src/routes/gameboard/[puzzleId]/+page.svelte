@@ -51,27 +51,18 @@
   // Handle puzzle completion - create activity record and update user stats
   async function onPuzzleComplete() {
     if (!db || !ffs || isDemo) return; // Skip for demo puzzles
-
-    console.log('🎉 Puzzle completed! Creating activity record...');
-
     try {
       const _auth = fb?.auth || auth?.getAuth?.();
       const user = _auth?.currentUser;
-      
-      if (!user?.uid) {
-        console.warn('No user logged in, skipping activity creation');
-        return; 
-      }
+      if (!user?.uid) return;
 
       const currentUID = user.uid;
       const puzzleTitle = data.puzzle?.title || 'Untitled';
 
-      console.log('Creating activity for user:', currentUID, 'puzzle:', puzzleTitle);
-
-      // Create activity record
+      // Activity record
       try {
         const activityRef = ffs.doc(ffs.collection(db, 'activity'));
-        const activityData = {
+        await ffs.setDoc(activityRef, {
           type: 'puzzle_solved',
           uid: currentUID,
           actor: {
@@ -80,49 +71,39 @@
             photoURL: user.photoURL || ''
           },
           puzzleId: data.id,
-          puzzleTitle: puzzleTitle,
+          puzzleTitle,
           visibility: data.puzzle?.visibility || 'public',
           createdAt: ffs.serverTimestamp()
-        };
-        
-        console.log('Activity data to save:', activityData);
-        
-        await ffs.setDoc(activityRef, activityData);
-        console.log('✅ Activity record created successfully!');
-      } catch (activityError) {
-        console.error('❌ Failed to create activity record:', activityError);
+        });
+      } catch (e) {
+        console.error('activity error', e);
       }
 
-      // Update user stats - increment puzzlesCompleted
+      // User stats
       try {
         const userRef = ffs.doc(db, 'users', currentUID);
         await ffs.setDoc(userRef, {
-          stats: {
-            puzzlesCompleted: ffs.increment(1)
-          },
+          stats: { puzzlesCompleted: ffs.increment(1) },
           updatedAt: ffs.serverTimestamp()
         }, { merge: true });
-      } catch (statsError) {
-        console.error('Failed to update user stats:', statsError);
+      } catch (e) {
+        console.error('user stats error', e);
       }
 
-      // Update puzzle stats - increment completions
+      // Puzzle stats
       try {
-        if (data.id !== 'example') { // Don't update stats for demo puzzle
+        if (data.id !== 'example') {
           const puzzleRef = ffs.doc(db, 'puzzles', data.id);
           await ffs.setDoc(puzzleRef, {
-            stats: {
-              completions: ffs.increment(1)
-            },
+            stats: { completions: ffs.increment(1) },
             updatedAt: ffs.serverTimestamp()
           }, { merge: true });
         }
-      } catch (puzzleStatsError) {
-        console.error('Failed to update puzzle stats:', puzzleStatsError);
+      } catch (e) {
+        console.error('puzzle stats error', e);
       }
-
     } catch (error) {
-      console.error('Error handling puzzle completion:', error);
+      console.error('onPuzzleComplete error', error);
     }
   }
 
@@ -134,15 +115,12 @@
 
   const pause = (ms: number) => new Promise((res) => setTimeout(res, ms));
 
-  // Find a word button in the grid
   function findWordButton(word: string): HTMLButtonElement | null {
-    // Prefer the explicit data attribute we set on GameBoard buttons
     const byData = document.querySelector<HTMLButtonElement>(
       `button[data-word="${CSS.escape(word)}"]`
     );
     if (byData) return byData;
 
-    // Fallback: match by visible text (works if the card hasn't flipped yet)
     const buttons = document.querySelectorAll<HTMLButtonElement>('button[data-selected]');
     for (const b of buttons) {
       if (b.textContent?.trim() === word) return b;
@@ -172,14 +150,12 @@
     autoPlaying = true;
     abortDemo = false;
 
-    // Use the categories delivered by the loader (DEMO has them baked in)
     for (const cat of (data.puzzle?.categories ?? [])) {
       if (abortDemo) break;
       for (const w of (cat.words ?? [])) {
         if (abortDemo) break;
         await clickWord(String(w));
       }
-      // Let GameBoard resolve/flip after 4 picks
       await pause(360);
     }
 
@@ -198,51 +174,48 @@
   <title>{data?.puzzle?.title ? `${data.puzzle.title} – Play` : 'Play Puzzle'}</title>
 </svelte:head>
 
-<main class="mx-auto max-w-5xl px-4 py-8">
-  <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
-    <div>
-      <h1 class="text-2xl font-semibold">{data.puzzle?.title ?? 'Puzzle'}</h1>
-      {#if data.puzzle?.description}
-        <p class="mt-1 text-sm text-zinc-600 dark:text-zinc-400">{data.puzzle.description}</p>
-      {/if}
-    </div>
+<!-- Provider wraps the WHOLE page so the theme background applies globally -->
+<PuzzleThemeProvider themeKey={data.puzzle?.theme}>
+  <main class="mx-auto max-w-5xl px-4 py-8">
+    <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
+      <div>
+        <h1 class="text-2xl font-semibold">{data.puzzle?.title ?? 'Puzzle'}</h1>
+        {#if data.puzzle?.description}
+          <p class="mt-1 text-sm text-zinc-600 dark:text-zinc-400">{data.puzzle.description}</p>
+        {/if}
+      </div>
 
-    <div class="flex items-center gap-2">
-      <!-- Hint button (always available) -->
-      <HintButton
-        cursorSrc={CURSOR_SRC}
-        brand={BRAND}
-        solvedByGroup={boardSolvedByGroup}
-        selectedWords={boardSelectedWords}
-      />
+      <div class="flex items-center gap-2">
+        <HintButton
+          cursorSrc={CURSOR_SRC}
+          brand={BRAND}
+          solvedByGroup={boardSolvedByGroup}
+          selectedWords={boardSelectedWords}
+        />
 
-      {#if isDemo}
-        <!-- Demo auto-solve controls -->
-        <button
-          type="button"
-          class="rounded-md bg-[color:var(--brand)] px-3 py-1.5 text-sm font-semibold text-white shadow-sm transition hover:brightness-95 focus:ring-2 focus:ring-[color:var(--brand)]/40 focus:outline-none disabled:opacity-50"
-          on:click={autoSolve}
-          disabled={autoPlaying}
-        >
-          {autoPlaying ? 'Playing…' : 'Auto-solve (cursor)'}
-        </button>
-
-        {#if autoPlaying}
+        {#if isDemo}
           <button
             type="button"
-            class="rounded-md border border-red-300 px-3 py-1.5 text-sm font-medium text-red-600 transition-colors hover:bg-red-50 dark:hover:bg-red-900/20"
-            on:click={stopAuto}
+            class="rounded-md bg-[color:var(--brand)] px-3 py-1.5 text-sm font-semibold text-white shadow-sm transition hover:brightness-95 focus:ring-2 focus:ring-[color:var(--brand)]/40 focus:outline-none disabled:opacity-50"
+            on:click={autoSolve}
+            disabled={autoPlaying}
           >
-            Stop
+            {autoPlaying ? 'Playing…' : 'Auto-solve (cursor)'}
           </button>
+
+          {#if autoPlaying}
+            <button
+              type="button"
+              class="rounded-md border border-red-300 px-3 py-1.5 text-sm font-medium text-red-600 transition-colors hover:bg-red-50 dark:hover:bg-red-900/20"
+              on:click={stopAuto}
+            >
+              Stop
+            </button>
+          {/if}
         {/if}
-      {/if}
+      </div>
     </div>
-  </div>
 
-  
-
-  <PuzzleThemeProvider themeKey={data.puzzle?.theme}>
     <GameBoard
       puzzleId={data.id}
       puzzle={data.puzzle}
@@ -251,7 +224,7 @@
       on:state={onBoardState}
       on:complete={onPuzzleComplete}
     />
-  </PuzzleThemeProvider>
+  </main>
 
   {#if isDemo}
     <!-- Demo cursor overlay -->
@@ -269,4 +242,4 @@
       aria-hidden="true"
     />
   {/if}
-</main>
+</PuzzleThemeProvider>
